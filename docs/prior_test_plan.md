@@ -13,7 +13,7 @@
 3. 该效应是否跨买卖方向、私人信号强度、历史样本及有限提示词变体保持稳定？
 4. 哪组信息强度能形成可测但不过度饱和的反应，值得进入独立的正式 micro experiment？
 
-**工程结论：PAMS 不能开箱即用完成这项 prior test，但你也不需要从零实现整个 agent-market-data-visualization 系统。** 首选独立 Python decision-probe harness：自己编写研究专属的历史生成、context、LLM 调用与实验记录层，复用现成验证、统计与绘图库。当前不需要订单簿；未来若进入市场实验，再用适配器接入 PAMS。
+**工程结论：本轮使用独立 Python decision-probe harness。** 自己编写研究专属的历史生成、context、LLM 调用与实验记录层，复用通用验证、统计与绘图库；本轮不实现订单簿、撮合或市场调度。
 
 ### 1.1 必须收窄的理论表述
 
@@ -32,9 +32,7 @@
 | §3.1 / Algorithm 1 是单 agent、单次决策的 loss-aversion probe | 支持先验证局部决策机制的路线，但不是本研究的 reputation 处理 |
 | §3.2 / Algorithm 2 / PDF pp.8–9 的 herd experiment 有 20 个 agent、3 个 session，每种设置 30 个不同 seed 的 trials | 其 herd micro 本身有交互，不应描述为所有 micro 都是独立单次问答 |
 | Base、OFI、leader-board 三种设置；榜单呈现前三名交易者的当前财富与最近订单方向 | 与本题相近，但没有把单一 source 当前方向固定后单独操纵历史正确率 |
-| §4 将 LLM 决策方向与订单定价等部分分离，使用 PAMS 做市场模拟 | 可以借鉴决策与执行分层；无需搬入 FCN 权重或宏观参数 |
 | Appendix A / PDF p.21 包含 OFI 含义、持仓、未实现损益等上下文 | 不能原样复用：会引入锚定、损失厌恶及额外社会信息 |
-| Data availability / PDF p.23 说明代码框架与实验配置可向通讯作者合理请求；生成数据不公开分享 | **公开 PAMS 不等于该论文的实验代码**；本次核查未确认可直接下载的完整作者复现包 |
 
 本方案采用固定情境的单次决策，属于为因果隔离而设计的新 micro protocol，不是声称精确复现 Hashimoto。论文只作为方法依据，不将其中给 agent 的指令当成本次用户指令。
 
@@ -391,50 +389,7 @@ source:
 
 Go 仅授权研究逻辑上进入独立正式 micro，并不等于 H2 已被支持或应立即开始大规模市场模拟。
 
-## 10. PAMS 代码复用评估
-
-### 10.1 本次实际检查的对象
-
-本地路径：`/Users/henrysang/Documents/pams`。remote：`git@github.com:masanorihirano/pams.git`。检查时 commit：`4ebd4cbd8639474a833788124e5f682ae0db3d5a`；`pyproject.toml` 版本为 0.2.2。以下是该本地版本的静态代码审查，不代表所有 fork 或未来版本，也没有声称已运行本方案或完成 PAMS 接入测试。
-
-| 需求 | 代码证据 | 复用结论 |
-| --- | --- | --- |
-| Agent 生命周期与下单入口 | `pams/agents/base.py`：抽象 `submit_orders(markets)`，持仓与现金及订单回调 | 可用于未来 LLM adapter；不是现成 LLM trader |
-| 自定义类注册 | `samples/user_class/main.py`，`Runner.class_register` | 可以扩展，不需改写 PAMS 核心 |
-| 订单与订单簿 | `pams/order.py`、`pams/order_book.py`、`pams/market.py` | 后续市场阶段复用，本 prior test 不需要 |
-| 调度 | `pams/runners/sequential.py`、`pams/session.py` | 市场阶段复用；本轮使用独立批量 runner 更清楚 |
-| 订单/成交/撤单事件 | `pams/logs/base.py` 中 OrderLog、ExecutionLog 等与 Logger 回调 | 后续可接自定义落盘；没有自动记录 prompt、token 和失败信息 |
-| LLM / reputation 实验 | 本地 `pams`、`samples` 与依赖配置未检出对应实现 | 需新增研究层，不能改一个 config 就跑 |
-| FCN 决策 | `pams/agents/fcn_agent.py` 组合 fundamental/chart/noise；访问 `get_fundamental_price()` | 不适合直接继承并保留其核心方向逻辑；可能泄漏真实基本面 |
-| 分析和绘图 | examples 可参考一般市场数据流程 | reputation 指标与配对区间需自行定义，绘图库可直接复用 |
-
-尤其要注意：PAMS 持有现金/资产状态不等于你的研究风险约束都自动得到强制执行。未来 adapter 仍须明确 BUY/SELL 的可行性、现金预留、仓位与订单上限，并做集成验证。
-
-### 10.2 三条路线比较
-
-| 路线 | 是否适合当前 prior test | 原因 |
-| --- | --- | --- |
-| 不改 PAMS，只运行已有 config | 不适合 | 缺少 LLM、history treatment、配对情境与请求记录 |
-| 新建独立 micro harness，后续接 PAMS | **推荐** | 隔离信息因果效应，成本小，决策层可直接复用 |
-| 立即继承 Agent，在完整 PAMS 市场跑全部实验 | 技术可行但此时不优先 | 成交、价格路径和调度会增加混淆与工程量；即使冻结市场也比直接情境调用复杂 |
-
-因此，“不能直接用 PAMS”与“必须从零构建所有东西”不是二选一。需要自建的是**实验特有逻辑**，不是市场引擎、LLM 推理引擎、统计包与可视化引擎。
-
-### 10.3 后续接入边界（仅保留接口，不开展 macro）
-
-```text
-Frozen scenario → ContextBuilder → DecisionPolicy → DecisionLog
-                                      ↓
-                         DeterministicExecutionAdapter
-                                      ↓
-                           PAMS Order / Market / Logger
-```
-
-日后创建 `LLMReceiverAgent(Agent)`，实现 `submit_orders(markets)`，通过白名单 ContextBuilder 调用同一 DecisionPolicy。BUY/SELL 转换成共同规则的 Order；HOLD 返回空列表。价格、数量、TTL 由确定性适配器统一处理，`runner.class_register(LLMReceiverAgent)` 注册。**不把整个 Market/Simulator 对象交给模型**，尤其不暴露真实基本面。
-
-可先做一个未来集成 smoke test：同一固定公开状态下，离线与 PAMS adapter 生成的 prompt_hash 一致；用固定 mock decision 验证方向、订单及日志关联。只有集成通过，再考虑市场实验。本轮不必为了这项计划修改 PAMS 源码。
-
-## 11. 工具与最小项目结构
+## 10. 工具与最小项目结构
 
 | 模块 | 建议工具 | 是否需要自行编写研究逻辑 |
 | --- | --- | --- |
@@ -445,7 +400,6 @@ Frozen scenario → ContextBuilder → DecisionPolicy → DecisionLog
 | 分析 | Pandas、NumPy；SciPy/statsmodels 按需 | 是：estimand 与 cluster bootstrap；统计库复用 |
 | 图表 | Matplotlib 或 Plotly | 写少量专用绘图代码 |
 | 校验 | pytest、mock LLM | 检验信息泄漏、历史约束、随机化及失败处理 |
-| 市场 | PAMS | 当前非必要，后续复用 |
 
 无需一开始引入 LangChain、多 agent 对话、RAG、真实行情采购或向量数据库。固定合成情境足够回答本次问题。
 
@@ -489,7 +443,7 @@ analyze_paired_history_family_effects()
 
 进入付费推理前的必要校验：历史正确数与方向计数；镜像对称；同 cell 除指定字段外一致；hidden outcome 改变不影响 prompt_hash；所有订单动作可行；mock 输出的 follow_source 编码正确；HOLD 诊断块的三动作编码正确；恢复执行不重复计数；bootstrap 不拆散家族。它们直接保护因果识别，优先于测试每一行模板实现。
 
-## 12. 执行清单与应交付成果
+## 11. 执行清单与应交付成果
 
 1. 确认主模型、可选复制模型、预算和主任务语言；采用本文件的数值默认值或在运行前记录替代值。
 2. 建立 schema、生成器和 public/hidden 分离；生成开发集，人工检查至少两组完整历史及镜像。
@@ -502,11 +456,9 @@ analyze_paired_history_family_effects()
 
 最终最小交付包应包括：`protocol/manifest`、历史与情境库、完整 prompt/response 日志、分析表、四类图、可一键重算分析的脚本、pilot report。当前文件只是研究与实施指导，**尚未调用被测模型、运行实验或产生任何实证结果**。
 
-## 13. 核查来源
+## 12. 核查来源
 
 - 用户 proposal：[Capstone_Proposal_Draft_Reputation_Strategic_Imitation.md](/Users/henrysang/Desktop/Capstone-FinTech/new-ideas/Capstone_Proposal_Draft_Reputation_Strategic_Imitation.md)。本方案主要对齐其 Phase 0、Phase 1、history-only 与 model-suitability gate。
 - 用户提供的 [Hashimoto et al. PDF](/Users/henrysang/Desktop/Capstone-FinTech/capstone-literature/stock-market/LLM-agents-reveal-how.pdf)，重点核查 §3、§4、Appendix A、Data availability；[正式论文页面](https://link.springer.com/article/10.1007/s42001-026-00465-4)。上文论文细节以本地全文与页面图像为据。
-- [PAMS 官方仓库](https://github.com/masanorihirano/pams)、[官方 Agent 文档](https://pams.hirano.dev/en/latest/reference/agents.html)、[项目介绍](https://pams.hirano.dev/en/latest/user_guide/about.html)。功能判断优先依据本地固定 commit 的代码，而非假设 latest 文档与本地版本完全一致。
-- 本地实现证据：[Agent](/Users/henrysang/Documents/pams/pams/agents/base.py)、[FCNAgent](/Users/henrysang/Documents/pams/pams/agents/fcn_agent.py)、[类注册示例](/Users/henrysang/Documents/pams/samples/user_class/main.py)、[Logger](/Users/henrysang/Documents/pams/pams/logs/base.py)、[依赖配置](/Users/henrysang/Documents/pams/pyproject.toml)。
 
 文中 treatment 强度、样本规模、统计流程、工程门槛及 prompt 是针对本项目提出的设计建议，不是 Hashimoto 的原始设置，也不是已有实验发现。
