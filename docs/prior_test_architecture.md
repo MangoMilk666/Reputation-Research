@@ -27,27 +27,35 @@ Randomized Queue ──→ LLM Client ──→ Raw Attempt Log
 ## 2. 目录与模块
 
 ```text
-reputation_micro/
-  configs/pilot_v1.yaml
-  prompts/system_v1.txt
-  src/schema.py
-  src/generate_scenarios.py
-  src/render_context.py
-  src/llm_client.py
-  src/run_pilot.py
-  src/analyze.py
-  src/plot.py
-  tests/test_design_invariants.py
-  data/{manifests,scenarios,raw,derived}/
-  outputs/{figures,pilot_report.md}
+prior-test/                                  # 独立的 prior-test 项目根目录
+  .venv/                                    # 唯一的本地 Python 虚拟环境（不提交）
+  README.md                                 # 环境配置、CLI 参数、数据和图表产物说明
+  pyproject.toml                            # Python 包元数据和运行依赖
+  configs/
+    pilot_v1.json                           # 冻结的 protocol、模型和随机化配置
+  prompts/
+    system_v1.txt                           # 与 prior_test_plan 对齐的冻结 system prompt
+  src/prior_test/
+    schema.py                               # 核心数据对象与 JSON 可序列化函数
+    generate.py                            # 配对 history、镜像情境和 trial 队列生成
+    render.py                               # 白名单 public-context renderer 和 prompt hash
+    client.py                               # mock client 与 OpenAI SDK / Ollama client
+    runner.py                               # 单次完整运行：采集、落盘并触发分析
+    analyze.py                              # 派生指标、cluster bootstrap 和分析表写入
+    plot.py                                 # source-following 与 family-effect PNG 图
+    cli.py                                  # `prior-test run/analyze` 命令行入口
+  tests/
+    test_design_invariants.py               # history 配对、字段泄漏和渲染顺序的设计测试
+  data/runs/                                # 每次 CLI run 的独立原始数据和分析产物（不提交）
 ```
 
-- `schema.py`：Pydantic/JSON Schema 定义 manifest、scenario、trial、attempt、decision。
-- `generate_scenarios.py`：生成隐藏状态、q、镜像方向及 H60/H80/H90 配对历史。
-- `render_context.py`：白名单字段 renderer；绝不序列化完整实验对象。
-- `llm_client.py`：通过 OpenAI-compatible SDK 连接 Ollama，负责固定 model adapter、超时、transport retry 与 token usage 记录。
-- `run_pilot.py`：交错 treatment、断点续跑；原始响应先落盘再解析。
+- `schema.py`：dataclass 定义 history、scenario、trial；严格区分研究者对象与公开 renderer。
+- `generate.py`：生成 q 分层和镜像方向；同一家族 H60/H80/H90 共享 realized outcome 序列，只改变 source prediction。
+- `render.py`：按计划文档的字段顺序渲染白名单 public context；绝不序列化完整实验对象。
+- `client.py`：通过 OpenAI-compatible SDK 连接 Ollama，负责固定 model adapter、超时、transport retry 与 token usage 记录。
+- `runner.py`：交错 treatment、写入 prompt/attempt/decision 日志，并自动触发分析与绘图。
 - `analyze.py`：`follow_source`、`follow_private`、invalid 率及 family-level paired bootstrap。
+- `plot.py`：将主 treatment 跟随率和 family-level H90−H60 效应输出为 PNG。
 - `tests/`：检查历史计数、镜像、字段泄漏、prompt hash、可行性、重试不重复计数。
 
 ## 3. 数据契约
@@ -67,7 +75,7 @@ for trial in queue:
     for attempt in call_with_retry(trial):
         append_raw(attempt)
     append_parsed_decision(validate_schema(attempt.response))
-analyze_by_history_family()
+write_analysis_artifacts(run_directory)
 ```
 
 `DecisionPolicy` 只负责 render、调用和解析，不编码“高准确率就跟随”的行为规则。离线 Bayesian comparator 仅作为分析参照，不能进入被测 agent。

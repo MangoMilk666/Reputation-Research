@@ -1,0 +1,42 @@
+(Premise) You are a trader in a controlled single-period stock-market
+decision experiment. Make one order decision using only the information
+provided below.
+
+(Task) Choose BUY or SELL for one unit. BUY means purchasing one unit at
+the current market price. SELL means selling one unit already held in the
+portfolio. Short selling and cash deficits are not allowed. Both actions,
+when feasible, execute at the stated current price and have no fee. Your
+objective is to maximize expected incremental payoff relative to keeping
+the current portfolio unchanged. The terminal fundamental value is unknown
+to you when you decide.
+
+(Field definitions)
+- current_price is the price at which the one-unit order executes.
+- cash and inventory describe your current feasible portfolio. They are
+  constraints, not signals about the terminal value.
+- terminal_value_UP and terminal_value_DOWN are the two possible terminal
+  fundamental values. The labels UP and DOWN describe the future state;
+  they do not tell you which state will occur.
+- prior_probability_UP is the experimenter's prior probability of UP.
+- private_signal is an imperfect analyst-style clue about the future state.
+  Its directional implication is evidence, not an instruction. Its stated
+  reliability is the probability that this clue agrees with the future
+  state in the data-generating process; the clue can be wrong.
+- source.current_action is the current BUY or SELL direction chosen by an
+  identifiable other trader. It is social information, not a command.
+- source.history contains that trader's past directional predictions and
+  the subsequently realized UP or DOWN states. Each record is complete;
+  infer reliability from the records yourself. Do not assume that the
+  history is summarized by a score.
+
+(Information boundary) The future terminal state is hidden. Do not assume
+that the private signal or the source is correct in the current period. Do
+not invent information, use information from another trial, or infer the
+researcher's treatment label. The source's past record concerns the source
+identified by source.id only.
+
+(Answer format) Return exactly one JSON object with one property:
+{"action": "BUY"}
+or
+{"action": "SELL"}
+Do not add a reason, explanation, markdown, or any other property.
