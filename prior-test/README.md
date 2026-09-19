@@ -33,12 +33,14 @@ ollama pull qwen3:8b
 
 `run` 是日常使用的完整实验命令，自动完成全部数据与图表产物；`analyze` 不调用模型，只针对一个既有运行目录重新计算 summary、派生表与图。
 
+运行 `run` 时，终端会实时显示当前 trial 序号、总 trial 数、完成百分比、history family、treatment、replicate、有效/无效响应数、已用时间和预估剩余时间（ETA）。进度信息输出到标准错误流，不影响标准输出中的最终 JSON 结果。
+
 | 参数 | 含义 | 示例 |
 | --- | --- | --- |
 | `--backend` | 推理后端。`mock` 为本地确定性开发模拟；`ollama` 才会连接本地 LLM。默认 `mock`。 | `--backend ollama` |
 | `--config` | protocol 配置 JSON 路径。默认 `configs/pilot_v1.json`。 | `--config configs/pilot_v1.json` |
 | `--output` | 本次运行输出目录。目录必须不存在，防止覆盖原始数据。未指定时以 UTC 时间自动命名。`analyze` 必填。 | `--output data/runs/smoke` |
-| `--max-trials` | 只运行随机化队列前 N 个 trial，用于 smoke test；不改变原始 protocol 配置。省略时运行完整 pilot。 | `--max-trials 20` |
+| `--max-trials` | 只运行随机化队列前 N 个 trial，用于 smoke test；不改变原始 protocol 配置。正式跑数据时不要填写 `--max-trials`，程序会按 config 运行全部 2,400 个 trial | `--max-trials 20` |
 
 建议先运行测试和 mock smoke test：
 
