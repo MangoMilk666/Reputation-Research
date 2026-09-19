@@ -1,0 +1,119 @@
+# --- IDEs & OS (本地开发环境) ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+.project
+.classpath
+.settings/
+*.iml
+*.factorypath
+
+# --- AI Vibe Tools ---
+.trae/
+.claude/
+
+# --- Java / Spring Boot / Maven / Gradle ---
+**/target/
+**/build/
+**/out/
+*.class
+*Test.java
+**/test/
+*.jar
+*.war
+*.ear
+.flattened-pom.xml
+.gradle/
+gradle-app.setting
+
+# --- Python / FastAPI / RAG / AI ---
+**/.venv/
+**/venv/
+ENV/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+**/.chroma/
+**/_chroma_data/
+**/faiss_index/
+.cache/huggingface/
+.cache/modelscope/
+*.pt
+*.onnx
+*.bin
+
+# --- NodeJS / React / Vite (Frontend) ---
+**/node_modules/
+.pnpm-store/
+.bun/
+bun.lockb
+.pnp
+.pnp.js
+**/dist/
+.vite/
+*.tsbuildinfo
+.eslintcache
+.prettiercache
+.stylelintcache
+
+# --- Environment Variables & Secrets (CRITICAL) ---
+.env
+.env.*
+!.env.prod.example
+!.env.example
+!**/.env.example
+!.env.*.example
+!**/.env.*.example
+*.env
+**/application-dev.yml
+**/application-dev.properties
+**/secrets.yaml
+
+# --- Logs & Runtime ---
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Testing Coverage ---
+**/coverage/
+htmlcov/
+.txtorcon/
+
+# --- Docker & Local Databases ---
+/data/
+**/data/
+docker-compose.override.yml
+docker-compose.override.yaml
+*.sql
+!docs/**/*.sql
+*.dump
+.idea/dataSources/
+.idea/dataSources.local.xml
+
+# --- Hosting & CI/CD ---
+.vercel/
+.serverless/
+
+# 需忽略目录/文件
+docs/.log/
+docs/assets/
+.log/
+**/test.txt
+bug-records.md
+local-prompts/
+
+# 启动fastAPI项目的命令脚本
+services/vago-ai/launch.sh
