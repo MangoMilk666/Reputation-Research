@@ -27,26 +27,26 @@ Randomized Queue ──→ LLM Client ──→ Raw Attempt Log
 ## 2. 目录与模块
 
 ```text
-prior-test/                                  # 独立的 prior-test 项目根目录
-  .venv/                                    # 唯一的本地 Python 虚拟环境（不提交）
-  README.md                                 # 环境配置、CLI 参数、数据和图表产物说明
-  pyproject.toml                            # Python 包元数据和运行依赖
-  configs/
-    pilot_v1.json                           # 冻结的 protocol、模型和随机化配置
-  prompts/
-    system_v1.txt                           # 与 prior_test_plan 对齐的冻结 system prompt
-  src/prior_test/
-    schema.py                               # 核心数据对象与 JSON 可序列化函数
-    generate.py                            # 配对 history、镜像情境和 trial 队列生成
-    render.py                               # 白名单 public-context renderer 和 prompt hash
-    client.py                               # mock client 与 OpenAI SDK / Ollama client
-    runner.py                               # 单次完整运行：采集、落盘并触发分析
-    analyze.py                              # 派生指标、cluster bootstrap 和分析表写入
-    plot.py                                 # source-following 与 family-effect PNG 图
-    cli.py                                  # `prior-test run/analyze` 命令行入口
-  tests/
-    test_design_invariants.py               # history 配对、字段泄漏和渲染顺序的设计测试
-  data/runs/                                # 每次 CLI run 的独立原始数据和分析产物（不提交）
+prior-test/                              # Self-contained prior-test project
+├── .venv/                               # Project-local Python environment; not committed
+├── README.md                            # Setup, CLI, data, and figure guide
+├── pyproject.toml                   # Package metadata and Python dependencies
+├── configs/
+│   └── pilot_v1.json      # Frozen protocol, model, and randomization settings
+├── prompts/
+│   └── system_v1.txt             # Frozen system prompt aligned to prior_test_plan
+├── src/prior_test/
+│   ├── schema.py                         # Data objects and JSON-serialization helpers
+│   ├── generate.py                       # Paired histories, mirrored scenarios, trial queue
+│   ├── render.py                         # Public-context renderer and prompt hashing
+│   ├── client.py                         # Mock client and OpenAI-SDK/Ollama client
+│   ├── runner.py                         # Full run orchestration and immutable data collection
+│   ├── analyze.py                        # Derived metrics, bootstrap, and output tables
+│   ├── plot.py                           # PNG figures for treatment rates and paired effects
+│   └── cli.py                            # `prior-test run` and `prior-test analyze` entry point
+├── tests/
+│   └── test_design_invariants.py        # Pairing, leakage, and renderer-order tests
+└── data/runs/                            # Per-run raw data and artifacts; not committed
 ```
 
 - `schema.py`：dataclass 定义 history、scenario、trial；严格区分研究者对象与公开 renderer。
