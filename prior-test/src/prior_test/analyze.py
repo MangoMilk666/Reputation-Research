@@ -24,6 +24,7 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
         if row["treatment_id"] != "B0":
             by_treatment[row["treatment_id"]].append(row)
     rates = {name: sum(row["action"] == row["source_action"] for row in rows) / len(rows) for name, rows in by_treatment.items()}
+    treatment_sample_sizes = {name: len(rows) for name, rows in by_treatment.items()}
     family_rates: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
     for row in valid:
         if row["treatment_id"] in {"H60", "H90"}:
@@ -31,7 +32,17 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     effects = [sum(values["H90"]) / len(values["H90"]) - sum(values["H60"]) / len(values["H60"]) for values in family_rates.values() if values["H60"] and values["H90"]]
     rng = random.Random(20260921)
     boot = sorted(sum(rng.choice(effects) for _ in effects) / len(effects) for _ in range(bootstrap_reps)) if effects else []
-    return {"planned_trials": len(decisions), "valid_trials": len(valid), "valid_rate": len(valid) / len(decisions) if decisions else 0, "follow_source_rates": rates, "delta_history_h90_minus_h60": sum(effects) / len(effects) if effects else None, "family_count": len(effects), "bootstrap_95_ci": [boot[int(.025 * len(boot))], boot[int(.975 * len(boot))]] if boot else None}
+    return {
+        "planned_trials": len(decisions),
+        "valid_trials": len(valid),
+        "valid_rate": len(valid) / len(decisions) if decisions else 0,
+        "follow_source_rates": rates,
+        "treatment_sample_sizes": treatment_sample_sizes,
+        "delta_history_h90_minus_h60": sum(effects) / len(effects) if effects else None,
+        "family_count": len(effects),
+        "bootstrap_95_ci": [boot[int(.025 * len(boot))], boot[int(.975 * len(boot))]] if boot else None,
+        "paired_effect_note": None if effects else "No complete H60/H90 history-family pair is available in this run.",
+    }
 
 
 def write_analysis_artifacts(run_dir: Path) -> dict:

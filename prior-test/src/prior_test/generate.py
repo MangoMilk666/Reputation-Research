@@ -71,3 +71,21 @@ def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
     rng = random.Random(config["request_seed"])
     rng.shuffle(trials)
     return [Trial(item.trial_id, item.scenario, item.treatment_id, item.replicate_id, index) for index, item in enumerate(trials)]
+
+
+def select_balanced_smoke_trials(trials: list[Trial], max_trials: int, config: dict) -> list[Trial]:
+    """选择完整的 family × replicate block，避免 smoke test 破坏主配对设计。"""
+    block_size = len(config["private_reliabilities"]) * 2 * len(config["treatments"])
+    if max_trials < block_size or max_trials % block_size:
+        raise ValueError(
+            f"--max-trials must be a multiple of {block_size}; "
+            "each smoke block contains one family, two directions, two q values, and all treatments."
+        )
+    # 根据随机队列中最早出现的位置排列 block，保留请求顺序的随机性。
+    blocks: dict[tuple[str, int], list[Trial]] = {}
+    for trial in trials:
+        blocks.setdefault((trial.scenario.family_id, trial.replicate_id), []).append(trial)
+    ordered_blocks = sorted(blocks.values(), key=lambda block: min(trial.order_index for trial in block))
+    selected = [trial for block in ordered_blocks[: max_trials // block_size] for trial in block]
+    # 重新交错已选 trial，避免同一 treatment 连续调用。
+    return sorted(selected, key=lambda trial: trial.order_index)

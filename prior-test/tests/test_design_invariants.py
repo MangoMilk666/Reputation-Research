@@ -1,6 +1,6 @@
 import random
 
-from prior_test.generate import generate_scenarios, make_history, make_trials, validate_history
+from prior_test.generate import generate_scenarios, make_history, make_trials, select_balanced_smoke_trials, validate_history
 from prior_test.render import render_user_context
 
 
@@ -32,3 +32,11 @@ def test_paired_history_treatments_share_realized_outcomes():
 def test_context_uses_protocol_field_order():
     context = render_user_context(make_trials([generate_scenarios(config())[0]], config())[0])
     assert context.startswith("(Information for this decision)\nasset_id: SYNTH_1\ncurrent_price: 100")
+
+
+def test_smoke_selection_keeps_a_complete_paired_block():
+    cfg = config()
+    selected = select_balanced_smoke_trials(make_trials(generate_scenarios(cfg), cfg), 20, cfg)
+    assert len(selected) == 20
+    assert len({trial.scenario.family_id for trial in selected}) == 1
+    assert {trial.treatment_id for trial in selected} == {"B0", "B1", "H60", "H80", "H90"}

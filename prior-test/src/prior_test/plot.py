@@ -30,8 +30,13 @@ def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
     effects = {family: sum(values["H90"]) / len(values["H90"]) - sum(values["H60"]) / len(values["H60"]) for family, values in families.items() if values["H60"] and values["H90"]}
     fig, axis = plt.subplots(figsize=(7, 4))
     axis.axhline(0, color="black", linewidth=.8)
-    axis.scatter(list(effects), list(effects.values()), color="#1b9e77")
-    axis.tick_params(axis="x", rotation=60)
+    if effects:
+        axis.scatter(list(effects), list(effects.values()), color="#1b9e77")
+        axis.tick_params(axis="x", rotation=60)
+    else:
+        # 不让不完整 smoke run 产生没有解释的空白图。
+        axis.text(0.5, 0.5, "No complete H60/H90 paired family\navailable in this run.", ha="center", va="center", transform=axis.transAxes)
+        axis.set_xticks([])
     axis.set_ylabel("H90 − H60 source-following rate")
     axis.set_title("Paired history-family effects")
     fig.tight_layout()

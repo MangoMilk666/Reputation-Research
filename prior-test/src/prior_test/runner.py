@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .analyze import write_analysis_artifacts
 from .client import MockClient, OllamaClient, parse_action
-from .generate import generate_scenarios, make_trials
+from .generate import generate_scenarios, make_trials, select_balanced_smoke_trials
 from .render import prompt_hash, render_user_context
 from .schema import to_jsonable
 
@@ -74,7 +74,7 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
     scenarios = generate_scenarios(config)
     trials = make_trials(scenarios, config)
     if max_trials is not None:
-        trials = trials[:max_trials]
+        trials = select_balanced_smoke_trials(trials, max_trials, config)
     progress = ProgressReporter(total=len(trials))
     # The manifest freezes every user-visible run setting. / manifest 冻结用户可见的每项运行设置。
     manifest = {**config, "backend": backend, "planned_trial_count": len(trials)}

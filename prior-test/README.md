@@ -40,7 +40,7 @@ ollama pull qwen3:8b
 | `--backend` | 推理后端。`mock` 为本地确定性开发模拟；`ollama` 才会连接本地 LLM。默认 `mock`。 | `--backend ollama` |
 | `--config` | protocol 配置 JSON 路径。默认 `configs/pilot_v1.json`。 | `--config configs/pilot_v1.json` |
 | `--output` | 本次运行输出目录。目录必须不存在，防止覆盖原始数据。未指定时以 UTC 时间自动命名。`analyze` 必填。 | `--output data/runs/smoke` |
-| `--max-trials` | 只运行随机化队列前 N 个 trial，用于 smoke test；不改变原始 protocol 配置。正式跑数据时不要填写 `--max-trials`，程序会按 config 运行全部 2,400 个 trial | `--max-trials 20` |
+| `--max-trials` | 用于 smoke test，按完整平衡 block 选择 trial，而不是截断随机队列。N 必须是 20 的整数倍；20 条恰为一个 family × 两个方向 × 两个 q × 五个 treatment × 一个 replicate。正式运行不填写。 | `--max-trials 20` |
 
 建议先运行测试和 mock smoke test：
 
