@@ -56,7 +56,7 @@ prior-test/                              # Self-contained prior-test project
 - `runner.py`：交错 treatment、写入 prompt/attempt/decision 日志，并自动触发分析与绘图。
 - `analyze.py`：仅在 conflict cell 计算 `follow_source`/`follow_private` 主指标；另输出 agreement、BUY/SELL、q 和 receiver-state 分层，以及 family-level paired bootstrap。
 - `plot.py`：输出 conflict 主 treatment 跟随率、family-level H90−H60、方向/一致性/receiver-state 诊断 PNG。
-- `tests/`：检查历史计数、portfolio 与未实现盈亏可复算、reference state、direction/relation 平衡、字段泄漏、prompt hash、可行性、重试不重复计数。
+- `tests/`：检查历史计数、portfolio 与未实现盈亏可复算、reference state、direction/relation 平衡、字段泄漏、prompt hash、双向可行性（cash 足够 BUY 且 inventory 足够 SELL）、无强制交易警告、重试不重复计数。
 
 ## 3. 数据契约
 
@@ -82,6 +82,6 @@ write_analysis_artifacts(run_directory)
 
 ## 5. 验证与安全边界
 
-付费调用前必须通过 mock client：H60/H80/H90 正确数与方向计数正确；private/source 2×2 组合、agreement/conflict 与 G+/G−/L−/L+ family 分配平衡；portfolio、personal history、cost basis、all-time high/low 与 unrealized P&L 一致且可复算；B0/B1/历史组的信息差异符合协议；hidden outcome 改变不影响公开 prompt；source/private action 可行；schema 拒绝额外字段；随机重跑不重复计数；bootstrap 以 family 为 cluster。
+付费调用前必须通过 mock client：H60/H80/H90 正确数与方向计数正确；private/source 2×2 组合、agreement/conflict 与 G+/G−/L−/L+ family 分配平衡；portfolio、personal history、cost basis、all-time high/low 与 unrealized P&L 一致且可复算；每个 trial 的 cash 足够一单位 BUY、inventory 足够一单位 SELL，且公开 prompt 不含负余额/负库存或强制 BUY/SELL 警告；B0/B1/历史组的信息差异符合协议；hidden outcome 改变不影响公开 prompt；source/private action 可行；schema 拒绝额外字段；随机重跑不重复计数；bootstrap 以 family 为 cluster。
 
 每次运行生成 manifest hash、代码版本和依赖锁定信息。任何 renderer 发现 hidden 字段、treatment label、accuracy summary 或跨 trial 内容时立即 fail closed，而不是继续调用。

@@ -24,7 +24,7 @@
 
 ## 3. 实验范围
 
-每个 scenario 使用单资产、单期、无价格反馈的 BUY/SELL 决策。价格为 100，终值为 UP=110、DOWN=90。所有条件均呈现 receiver 的 cash、inventory、average cost basis、个人交易史、unrealized gain/loss、all-time high 与 all-time low；这些值彼此可复算，且 BUY/SELL 均可行。receiver 看到可靠度为 q=.65 或 .85 的私人 signal；source observed order 与 private signal 独立、完全平衡地生成，形成同等数量的 agreement 与 conflict cells。隐藏真实状态只用于研究者生成与分析，不进入 prompt。
+每个 scenario 使用单资产、单期、无价格反馈的 BUY/SELL 决策。价格为 100，终值为 UP=110、DOWN=90。所有条件均呈现 receiver 的 cash、inventory、average cost basis、个人交易史、unrealized gain/loss、all-time high 与 all-time low；这些值彼此可复算，且 BUY/SELL 均可行。生成器强制 `cash ≥ current_price × 1` 与 `inventory ≥ 1`；prompt 不得出现负余额/负库存警告或“必须 BUY/SELL”的强制指令。receiver 看到可靠度为 q=.65 或 .85 的私人 signal；source observed order 与 private signal 独立、完全平衡地生成，形成同等数量的 agreement 与 conflict cells。隐藏真实状态只用于研究者生成与分析，不进入 prompt。
 
 五个条件如下：B0（receiver-state block + 私人 signal）、B1（加 source observed order）、H60/H80/H90（再加 20 条 history，分别 12/16/18 条正确）。B1 是 action-only social-information control，不称为无声誉基线。同一 history family、receiver state、private/source direction 和 q 下配对生成，只有声明的信息字段改变。
 

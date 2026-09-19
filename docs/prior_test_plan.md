@@ -62,6 +62,8 @@
 
 BUY/SELL 都可行，SELL 不要求卖空。portfolio、个人历史、cost basis、all-time high/low 和 unrealized gain/loss 是所有条件共有的**receiver-state block**，不是 treatment；它们使交易处在 Hashimoto 式的经济语境中，避免唯一具体行动字段 `source.current_action` 在 prompt 中不成比例地突出。仍不加入 OFI、新闻、leader-board、source 财富、排名或任何额外社会线索。
 
+**可行性规则与 Hashimoto 的区别**：Hashimoto 在 portfolio 出现负 cash 或负 stock volume 时，向 agent 加入“必须 SELL/BUY 以避免该状态”的警告。该机制适合其连续多期、允许库存状态越界的市场模拟；不适合本项目的单期 reputation probe，因为它会机械决定 action，并与 source-following 完全混淆。v2 改为生成前约束：每个公开情境必须满足 `cash ≥ current_price × 1` 且 `inventory ≥ 1`，故 BUY 和 SELL 始终同时可行；renderer 不得输出“必须买/卖”、负余额警告或补仓指令。若未来研究 forced liquidation 或 borrowing constraint，应建立独立的 portfolio-constraint treatment，不能混入主 estimand。
+
 每个 history family 预先分配到四种 Hashimoto-inspired reference-price state 之一，并在 24 个 family 中各出现 6 次：未实现收益且当前在高点（G+）、未实现收益且从高点回落（G−）、未实现亏损且当前在低点（L−）、未实现亏损且从低点反弹（L+）。这些状态只改变 receiver 的个人经济背景，绝不改变 source history 的正确次数、source identity 或 private/source 信息生成机制。它们是平衡的情境分层和异质性诊断，非本轮主 treatment。
 
 主实验采用 BUY/SELL 二元动作，以保持与 Hashimoto 的 herd micro 实验可比，并使“跟随 source”与“跟随私人信号”互斥且易解释。HOLD 不放入主 estimand：它可能代表不确定、风险规避、任务误解或格式策略，而不代表社会信息权重。另设小规模 HOLD 诊断块，检查二元强迫选择是否人为制造 imitation；诊断结果不与主实验合并。
