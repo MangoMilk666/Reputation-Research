@@ -83,7 +83,9 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
     scenario_path, prompt_path, raw_path, decision_path = output_dir / "scenarios.jsonl", output_dir / "prompts.jsonl", output_dir / "raw_attempts.jsonl", output_dir / "decisions.jsonl"
     for scenario in scenarios:
         write_jsonl(scenario_path, to_jsonable(scenario))
-    client = MockClient() if backend == "mock" else OllamaClient(config["base_url"], config["model"], config["temperature"], config["max_tokens"])
+    client = MockClient() if backend == "mock" else OllamaClient(
+        config["base_url"], config["model"], config["temperature"], config["max_tokens"], config.get("thinking")
+    )
     for trial in trials:
         progress.start_trial(trial)
         context = render_user_context(trial)
@@ -92,6 +94,7 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
         write_jsonl(prompt_path, {**trial_record, "user_context": context})
         final_action, error = None, None
         for attempt_id in range(1, config["max_attempts"] + 1):
+            completion = None
             try:
                 completion = client.complete(system_prompt=system_prompt, user_context=context, seed=config["request_seed"] + trial.order_index + attempt_id)
                 action = parse_action(completion.content)
@@ -100,7 +103,16 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
                 break
             except Exception as exc:  # preserve each failed attempt for exclusion bounds
                 error = f"{type(exc).__name__}: {exc}"
-                write_jsonl(raw_path, {**trial_record, "attempt_id": attempt_id, "raw_response": None, "request_id": None, "usage": {}, "latency_ms": None, "error": error})
+                # Preserve malformed model output when parsing fails; transport failures remain null.
+                write_jsonl(raw_path, {
+                    **trial_record,
+                    "attempt_id": attempt_id,
+                    "raw_response": completion.content if completion else None,
+                    "request_id": completion.request_id if completion else None,
+                    "usage": completion.usage if completion else {},
+                    "latency_ms": completion.latency_ms if completion else None,
+                    "error": error,
+                })
                 time.sleep(min(0.25 * attempt_id, 1.0))
         write_jsonl(decision_path, {**trial_record, "action": final_action, "valid": final_action is not None, "final_error": error if final_action is None else None})
         progress.finish_trial(trial, is_valid=final_action is not None)

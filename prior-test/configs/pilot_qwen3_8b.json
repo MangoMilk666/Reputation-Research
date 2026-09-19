@@ -8,6 +8,7 @@
   "replicates": 5,
   "temperature": 0.2,
   "max_tokens": 64,
+  "thinking": false,
   "order_seed": 20260919,
   "request_seed": 20260920,
   "max_attempts": 3

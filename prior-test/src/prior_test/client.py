@@ -4,6 +4,7 @@ import json
 import random
 import re
 import time
+from urllib.request import Request, urlopen
 from dataclasses import dataclass
 
 
@@ -36,14 +37,18 @@ class MockClient:
 
 
 class OllamaClient:
-    def __init__(self, base_url: str, model: str, temperature: float, max_tokens: int):
+    def __init__(self, base_url: str, model: str, temperature: float, max_tokens: int, thinking: bool | str | None = None):
         from openai import OpenAI
         # Ollama exposes an OpenAI-compatible endpoint. / Ollama 提供 OpenAI 兼容端点。
         self.client = OpenAI(base_url=base_url, api_key="ollama")
-        self.model, self.temperature, self.max_tokens = model, temperature, max_tokens
+        self.model, self.temperature, self.max_tokens, self.thinking = model, temperature, max_tokens, thinking
+        # Ollama's native endpoint is required when a protocol explicitly controls thinking.
+        self.native_chat_url = f"{base_url.removesuffix('/v1').rstrip('/')}/api/chat"
 
     def complete(self, *, system_prompt: str, user_context: str, seed: int, **_: object) -> Completion:
         started = time.perf_counter()
+        if self.thinking is not None:
+            return self._complete_native(system_prompt, user_context, started)
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_context}],
@@ -52,6 +57,28 @@ class OllamaClient:
         )
         usage = response.usage.model_dump() if response.usage else {}
         return Completion(response.choices[0].message.content or "", getattr(response, "_request_id", None), usage, int((time.perf_counter() - started) * 1000))
+
+    def _complete_native(self, system_prompt: str, user_context: str, started: float) -> Completion:
+        """使用 Ollama 原生接口，确保 `think` 不会在 OpenAI 兼容层被忽略。"""
+        # JSON Schema constrains the final answer without exposing an answer or treatment label.
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_context}],
+            "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
+            "think": self.thinking,
+            "format": {
+                "type": "object",
+                "properties": {"action": {"type": "string", "enum": ["BUY", "SELL"]}},
+                "required": ["action"],
+                "additionalProperties": False,
+            },
+            "stream": False,
+        }
+        request = Request(self.native_chat_url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=120) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        usage = {key: body[key] for key in ("prompt_eval_count", "eval_count", "total_duration", "load_duration") if key in body}
+        return Completion(body["message"].get("content", ""), None, usage, int((time.perf_counter() - started) * 1000))
 
 
 def parse_action(content: str) -> str:
