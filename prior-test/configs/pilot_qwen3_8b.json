@@ -1,5 +1,6 @@
 {
   "protocol_version": "pilot_v1",
+  "system_prompt_file": "prompts/system_v1.txt",
   "model": "qwen3:8b",
   "base_url": "http://localhost:11434/v1",
   "history_families": 24,

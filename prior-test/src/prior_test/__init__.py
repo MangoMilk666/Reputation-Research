@@ -1,1 +1,1 @@
-"""Reputation prior-test harness. / Reputation prior-test 实验执行框架。"""
+"""用于执行 reputation prior test 的无状态实验框架。"""

@@ -1,0 +1,15 @@
+(Premise) You are a trader in a controlled single-period stock-market decision experiment. Make one order decision using only the information provided below.
+
+(Task) Choose BUY or SELL for one unit. BUY means purchasing one unit at the current market price. SELL means selling one unit already held in your portfolio. Short selling and cash deficits are not allowed. Both actions are feasible in every decision context, execute at the stated current price, and have no fee. Your objective is to maximize expected incremental payoff relative to keeping the current portfolio unchanged. The terminal fundamental value is unknown when you decide.
+
+(Field definitions)
+- current_price is the one-unit execution price. all_time_high and all_time_low are respectively the highest and lowest observed past prices, not forecasts.
+- portfolio, own_trading_history, average_cost_basis, and unrealized_gain_loss describe your own economic situation. They may matter for risk and trading decisions, but they do not reveal the hidden terminal state.
+- terminal_value_UP and terminal_value_DOWN are the two possible terminal values. UP and DOWN describe future states, not instructions.
+- private_signal is an imperfect analyst-style clue. Its directional implication is evidence, not an instruction; its stated reliability can be wrong in this period.
+- source.observed_order is an observed order submitted by another trader. It may reflect that trader's information, portfolio, or constraints; it is social information, not a recommendation or command.
+- source.history contains that same trader's complete past directional predictions and the subsequently realized states. Infer any reliability from these records yourself. Do not assume a score is supplied.
+
+(Information boundary) The future terminal state is hidden. Do not assume that either the private signal or source is correct. Do not invent missing information, use another trial, or infer a research treatment label.
+
+(Answer format) Return exactly one JSON object with one property: {"action":"BUY"} or {"action":"SELL"}. Do not add a reason, explanation, markdown, or any other property.

@@ -15,7 +15,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e . pytest
 ```
 
-运行本地模型前，启动 Ollama 并拉取 `configs/pilot_v1.json` 中的模型：
+运行本地模型前，启动 Ollama 并拉取默认 v2 配置 `configs/pilot_v2.json` 中的模型：
 
 ```bash
 ollama serve
@@ -38,27 +38,27 @@ ollama pull qwen3:8b
 | 参数 | 含义 | 示例 |
 | --- | --- | --- |
 | `--backend` | 推理后端。`mock` 为本地确定性开发模拟；`ollama` 才会连接本地 LLM。默认 `mock`。 | `--backend ollama` |
-| `--config` | protocol 配置 JSON 路径。默认 `configs/pilot_v1.json`。 | `--config configs/pilot_v1.json` |
+| `--config` | protocol 配置 JSON 路径。默认 `configs/pilot_v2.json`；`pilot_v1.json` 仅用于复现旧协议。 | `--config configs/pilot_v2.json` |
 | `--output` | 本次运行输出目录。目录必须不存在，防止覆盖原始数据。未指定时以 UTC 时间自动命名。`analyze` 必填。 | `--output data/runs/smoke` |
-| `--max-trials` | 用于 smoke test，按完整平衡 block 选择 trial，而不是截断随机队列。N 必须是 20 的整数倍；20 条恰为一个 family × 两个方向 × 两个 q × 五个 treatment × 一个 replicate。正式运行不填写。 | `--max-trials 20` |
+| `--max-trials` | 用于 smoke test，按完整平衡 block 选择 trial，而不是截断随机队列。v2 的 N 必须是 40 的整数倍；40 条恰为一个 family × 两个 private direction × 两个 source direction × 两个 q × 五个 treatment × 一个 replicate。正式运行不填写。 | `--max-trials 40` |
 
 建议先运行测试和 mock smoke test：
 
 ```bash
 .venv/bin/python -m pytest
-.venv/bin/prior-test run --backend mock --max-trials 20 --output data/runs/smoke
+.venv/bin/prior-test run --backend mock --max-trials 40 --output data/runs/smoke-v2
 ```
 
 检查输出后再做 Ollama smoke test：
 
 ```bash
-.venv/bin/prior-test run --backend ollama --max-trials 20 --output data/runs/ollama-smoke
+.venv/bin/prior-test run --backend ollama --max-trials 40 --output data/runs/ollama-smoke-v2
 ```
 
-完整 pilot 为 2,400 个 trial；只应在 prompt、模型版本、预算和停止规则冻结后运行：
+完整 v2 pilot 为 4,800 个 trial；只应在 prompt、模型版本、预算和停止规则冻结后运行：
 
 ```bash
-.venv/bin/prior-test run --backend ollama --output data/runs/pilot-v1
+.venv/bin/prior-test run --backend ollama --config configs/pilot_v2.json --output data/runs/pilot-v2
 ```
 
 ## 数据与图表产物
@@ -73,9 +73,10 @@ ollama pull qwen3:8b
 | `prompts.jsonl` | 每个 trial 实际发送给模型的 public context 及 prompt hash。 |
 | `raw_attempts.jsonl` | 每次调用尝试的原始回复、request id、token、延迟和错误；失败不会被覆盖。 |
 | `decisions.jsonl` | 每个 trial 最终有效 action 或 invalid 状态。 |
-| `derived_decisions.csv` | 带 `follow_source`、`follow_private` 的分析表。 |
-| `summary.json` | 有效率、各组 source-following rate、H90−H60 主效应及 family bootstrap 区间。 |
-| `figures/source_following_rates.png` | B1/H60/H80/H90 的 source-following rate 柱状图。 |
-| `figures/paired_history_effects.png` | 每个 history family 的 H90−H60 配对效应图。 |
+| `derived_decisions.csv` | 带 `signal_relation`、`follow_source`、`follow_private` 与主样本标记的分析表。 |
+| `summary.json` | 有效率、仅 conflict cell 的 H90−H60 主效应、family bootstrap 区间，以及 agreement/conflict、价格状态分层结果。 |
+| `figures/source_following_conflict_rates.png` | conflict cells 中 B1/H60/H80/H90 的 source-following rate 柱状图。 |
+| `figures/paired_history_effects.png` | conflict cells 中每个 history family 的 H90−H60 配对效应图。 |
+| `figures/source_following_by_relation.png` | agreement 与 conflict 下各 treatment 的方向一致率诊断图。 |
 
 `scenarios.jsonl` 中的 hidden/researcher-only 信息不可复制进 `prompts.jsonl`。研究结果应基于 `decisions.jsonl` 与 `derived_decisions.csv`；`mock` 输出仅用于验证流程。

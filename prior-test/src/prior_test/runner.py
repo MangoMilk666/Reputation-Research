@@ -53,7 +53,7 @@ class ProgressReporter:
             f"treatment={trial.treatment_id} replicate={trial.replicate_id} | "
             f"valid={self.valid} invalid={self.invalid} | elapsed={elapsed:.0f}s ETA={remaining:.0f}s"
         )
-        # Interactive terminals redraw one compact line; redirected logs remain readable.
+        # 交互式终端覆盖同一行，重定向日志则逐行输出，便于之后回看。
         if self.is_tty:
             print(f"\r{message:<180}", end="", file=sys.stderr, flush=True)
         elif status == "done":
@@ -61,22 +61,20 @@ class ProgressReporter:
 
 
 def write_jsonl(path: Path, record: dict) -> None:
-    """Append immutable experimental records. / 追加不可变实验记录。"""
+    """追加不可变实验记录，避免重试或重新分析时覆盖原始证据。"""
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_trials: int | None) -> int:
-    '''
-    正式跑数据，调用所有封装好的函数。
-    '''
+    """执行一次完整 protocol：生成情境、调用模型、记录原始输出并产出分析文件。"""
     output_dir.mkdir(parents=True, exist_ok=False)
     scenarios = generate_scenarios(config)
     trials = make_trials(scenarios, config)
     if max_trials is not None:
         trials = select_balanced_smoke_trials(trials, max_trials, config)
     progress = ProgressReporter(total=len(trials))
-    # The manifest freezes every user-visible run setting. / manifest 冻结用户可见的每项运行设置。
+    # manifest 冻结本次运行的一切公开参数，使之后可判断两次结果能否比较。
     manifest = {**config, "backend": backend, "planned_trial_count": len(trials)}
     (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     (output_dir / "system_prompt.txt").write_text(system_prompt, encoding="utf-8")
@@ -88,9 +86,23 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
     )
     for trial in trials:
         progress.start_trial(trial)
-        context = render_user_context(trial)
-        trial_record = {"trial_id": trial.trial_id, "family_id": trial.scenario.family_id, "direction": trial.scenario.direction, "private_reliability": trial.scenario.private_reliability, "treatment_id": trial.treatment_id, "replicate_id": trial.replicate_id, "order_index": trial.order_index, "source_action": trial.scenario.source_action, "private_action": "BUY" if trial.scenario.private_direction == "UP" else "SELL", "prompt_hash": prompt_hash(system_prompt, context)}
-        # Store public prompt inputs separately from raw model outputs. / 将公开 prompt 输入与原始模型输出分开保存。
+        context = render_user_context(trial, config.get("information_block_order", "private_then_source"))
+        scenario = trial.scenario
+        trial_record = {
+            "trial_id": trial.trial_id,
+            "family_id": scenario.family_id,
+            "reference_price_state": scenario.portfolio.reference_price_state,
+            "private_direction": scenario.private_direction,
+            "source_action": scenario.source_action,
+            "signal_relation": scenario.signal_relation,
+            "private_reliability": scenario.private_reliability,
+            "treatment_id": trial.treatment_id,
+            "replicate_id": trial.replicate_id,
+            "order_index": trial.order_index,
+            "private_action": "BUY" if scenario.private_direction == "UP" else "SELL",
+            "prompt_hash": prompt_hash(system_prompt, context),
+        }
+        # 公开输入和模型原始输出分开保存，防止派生分析污染原始记录。
         write_jsonl(prompt_path, {**trial_record, "user_context": context})
         final_action, error = None, None
         for attempt_id in range(1, config["max_attempts"] + 1):
@@ -101,9 +113,9 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
                 write_jsonl(raw_path, {**trial_record, "attempt_id": attempt_id, "raw_response": completion.content, "request_id": completion.request_id, "usage": completion.usage, "latency_ms": completion.latency_ms, "error": None})
                 final_action = action
                 break
-            except Exception as exc:  # preserve each failed attempt for exclusion bounds
+            except Exception as exc:  # 每一次失败也要保存，才能计算保守失败界限。
                 error = f"{type(exc).__name__}: {exc}"
-                # Preserve malformed model output when parsing fails; transport failures remain null.
+                # 解析失败时保留模型原文；网络失败没有原文时才写入空值。
                 write_jsonl(raw_path, {
                     **trial_record,
                     "attempt_id": attempt_id,

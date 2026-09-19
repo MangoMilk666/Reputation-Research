@@ -2,23 +2,22 @@ from __future__ import annotations
 
 import random
 
-from .schema import HistoryRecord, Scenario, Trial
+from .schema import HistoryRecord, OwnTradeRecord, PortfolioState, Scenario, Trial
+
+
+# 四类价格路径来自 v2 协议，用于平衡 receiver 的个人参照点。
+REFERENCE_STATES = ("G+", "G-", "L-", "L+")
 
 
 def make_history(correct_count: int, rng: random.Random) -> list[HistoryRecord]:
-    """Create a valid standalone history; paired families share outcomes.
-        创建合法的独立历史；配对 family 共享同一 realized outcome 序列。
-    """
+    """生成满足长度、方向和正确数约束的一组 source 历史记录。"""
     outcomes = ["UP"] * 10 + ["DOWN"] * 10
-    # 打乱结果顺序，但可复现
     rng.shuffle(outcomes)
     return make_history_from_outcomes(outcomes, correct_count, rng)
 
 
 def make_history_from_outcomes(outcomes: list[str], correct_count: int, rng: random.Random) -> list[HistoryRecord]:
-    """Keep outcomes fixed while varying source predictions to achieve reliability.
-        保持 outcome 不变，只改变 source prediction，以实现不同可靠度。
-    """
+    """在固定 outcome 序列上改变预测，以配对比较 H60、H80 与 H90。"""
     if correct_count not in {12, 16, 18}:
         raise ValueError("correct_count must be one of 12, 16, 18")
     if len(outcomes) != 20 or outcomes.count("UP") != 10 or outcomes.count("DOWN") != 10:
@@ -28,15 +27,13 @@ def make_history_from_outcomes(outcomes: list[str], correct_count: int, rng: ran
     down_indexes = [index for index, value in enumerate(outcomes) if value == "DOWN"]
     buy_indexes = set(rng.sample(up_indexes, correct_buy_count))
     buy_indexes.update(rng.sample(down_indexes, 10 - correct_buy_count))
-    records: list[HistoryRecord] = []
-    for index, realized in enumerate(outcomes, start=1):
-        action = "BUY" if index - 1 in buy_indexes else "SELL"
-        records.append(HistoryRecord(index, action, realized))
+    records = [HistoryRecord(index, "BUY" if index - 1 in buy_indexes else "SELL", realized) for index, realized in enumerate(outcomes, start=1)]
     validate_history(records, correct_count)
     return records
 
 
 def validate_history(records: list[HistoryRecord], correct_count: int) -> None:
+    """阻止生成器静默放宽历史长度、方向平衡或目标正确数。"""
     if len(records) != 20:
         raise ValueError("history length must be 20")
     if sum(row.source_action == "BUY" for row in records) != 10:
@@ -47,26 +44,64 @@ def validate_history(records: list[HistoryRecord], correct_count: int) -> None:
         raise ValueError("history correct count invariant failed")
 
 
+def make_receiver_state(reference_state: str) -> tuple[PortfolioState, list[OwnTradeRecord]]:
+    """构造四类可复算的资产路径，并保证 BUY 与 SELL 在每条 trial 中均可行。"""
+    if reference_state not in REFERENCE_STATES:
+        raise ValueError("unknown receiver reference-price state")
+    specifications = {
+        "G+": (90.0, 100.0, 80.0),
+        "G-": (90.0, 120.0, 80.0),
+        "L-": (110.0, 120.0, 100.0),
+        "L+": (110.0, 120.0, 80.0),
+    }
+    cost_basis, all_time_high, all_time_low = specifications[reference_state]
+    portfolio = PortfolioState(1000.0, 10, cost_basis, 100.0, all_time_high, all_time_low, reference_state)
+    own_history = [
+        OwnTradeRecord(period=1, action="BUY", quantity=5, execution_price=cost_basis),
+        OwnTradeRecord(period=2, action="BUY", quantity=5, execution_price=cost_basis),
+    ]
+    validate_receiver_state(portfolio, own_history)
+    return portfolio, own_history
+
+
+def validate_receiver_state(portfolio: PortfolioState, own_history: list[OwnTradeRecord]) -> None:
+    """核验个人历史、价格参照点与盈亏数值一致，且不需要强制交易警告。"""
+    if portfolio.cash < portfolio.current_price or portfolio.inventory < 1:
+        raise ValueError("every v2 trial must allow both one-unit BUY and SELL")
+    if portfolio.all_time_low > portfolio.current_price or portfolio.all_time_high < portfolio.current_price:
+        raise ValueError("current price must lie between all-time low and high")
+    bought_quantity = sum(row.quantity for row in own_history if row.action == "BUY")
+    weighted_cost = sum(row.quantity * row.execution_price for row in own_history if row.action == "BUY")
+    if bought_quantity != portfolio.inventory or weighted_cost / bought_quantity != portfolio.average_cost_basis:
+        raise ValueError("own trading history must reproduce inventory and average cost basis")
+    expected_sign = 1 if portfolio.reference_price_state.startswith("G") else -1
+    if portfolio.unrealized_gain_loss * expected_sign <= 0:
+        raise ValueError("reference state must agree with unrealized gain/loss sign")
+
+
 def generate_scenarios(config: dict) -> list[Scenario]:
+    """生成 v2 的完整平衡组合：family、价格状态、两类方向与私人可靠度。"""
     rng = random.Random(config["order_seed"])
     scenarios: list[Scenario] = []
     for family_number in range(1, config["history_families"] + 1):
+        portfolio, own_history = make_receiver_state(REFERENCE_STATES[(family_number - 1) % len(REFERENCE_STATES)])
         outcomes = ["UP"] * 10 + ["DOWN"] * 10
         rng.shuffle(outcomes)
         histories = {f"H{pct}": make_history_from_outcomes(outcomes, count, rng) for pct, count in ((60, 12), (80, 16), (90, 18))}
         for private_direction in ("UP", "DOWN"):
-            source_action = "SELL" if private_direction == "UP" else "BUY"
-            for q in config["private_reliabilities"]:
-                scenarios.append(Scenario(f"family_{family_number:02d}", private_direction, q, private_direction, source_action, histories))
+            for source_action in ("BUY", "SELL"):
+                for reliability in config["private_reliabilities"]:
+                    scenarios.append(Scenario(f"family_{family_number:02d}", reliability, private_direction, source_action, portfolio, own_history, histories))
     return scenarios
 
 
 def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
+    """展开处理与重复调用，并用独立随机种子打乱实际请求顺序。"""
     trials: list[Trial] = []
     for scenario in scenarios:
         for treatment_id in config["treatments"]:
             for replicate_id in range(1, config["replicates"] + 1):
-                trial_id = f"{scenario.family_id}_{scenario.direction}_q{scenario.private_reliability}_{treatment_id}_r{replicate_id}"
+                trial_id = f"{scenario.family_id}_{scenario.portfolio.reference_price_state}_private{scenario.private_direction}_source{scenario.source_action}_q{scenario.private_reliability}_{treatment_id}_r{replicate_id}"
                 trials.append(Trial(trial_id, scenario, treatment_id, replicate_id, -1))
     rng = random.Random(config["request_seed"])
     rng.shuffle(trials)
@@ -74,18 +109,13 @@ def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
 
 
 def select_balanced_smoke_trials(trials: list[Trial], max_trials: int, config: dict) -> list[Trial]:
-    """选择完整的 family × replicate block，避免 smoke test 破坏主配对设计。"""
-    block_size = len(config["private_reliabilities"]) * 2 * len(config["treatments"])
+    """选择完整 family×replicate block，保留 v2 的方向与一致性平衡。"""
+    block_size = len(config["private_reliabilities"]) * 2 * 2 * len(config["treatments"])
     if max_trials < block_size or max_trials % block_size:
-        raise ValueError(
-            f"--max-trials must be a multiple of {block_size}; "
-            "each smoke block contains one family, two directions, two q values, and all treatments."
-        )
-    # 根据随机队列中最早出现的位置排列 block，保留请求顺序的随机性。
+        raise ValueError(f"--max-trials must be a multiple of {block_size}; each v2 smoke block contains one family, both private/source directions, all q values, and all treatments.")
     blocks: dict[tuple[str, int], list[Trial]] = {}
     for trial in trials:
         blocks.setdefault((trial.scenario.family_id, trial.replicate_id), []).append(trial)
     ordered_blocks = sorted(blocks.values(), key=lambda block: min(trial.order_index for trial in block))
     selected = [trial for block in ordered_blocks[: max_trials // block_size] for trial in block]
-    # 重新交错已选 trial，避免同一 treatment 连续调用。
     return sorted(selected, key=lambda trial: trial.order_index)

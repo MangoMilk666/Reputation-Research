@@ -13,28 +13,28 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_config(path: Path) -> dict:
-    """Read the frozen protocol configuration.
-        读取冻结的 protocol 配置。"""
+    """读取冻结的 protocol 配置；运行记录会完整复制其中的参数。"""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
-    """Run the full pipeline or recompute artifacts.
-        运行全流程或重算既有产物。"""
+    """运行全流程，或在不调用模型的前提下重算既有运行目录的分析产物。"""
     parser = argparse.ArgumentParser(description="Reputation prior-test harness")
-    # `run` 是日常使用的完整实验命令，自动完成全部数据与图表产物；
-    # `analyze` 不调用模型，只针对一个既有运行目录重新计算 summary、派生表与图。
+    # run 自动完成调用、日志、汇总和画图；
+    # analyze 只重算已有目录，不产生新模型请求。
     parser.add_argument("command", choices=["run", "analyze"], help="run executes the full pipeline; analyze regenerates artifacts for an existing run.")
-    # protocol 配置 JSON 路径。默认 `configs/pilot_v1.json`
-    parser.add_argument("--config", type=Path, default=ROOT / "configs/pilot_v1.json")
-    # 本次运行输出目录。目录必须不存在，防止覆盖原始数据。
+    # 默认使用 v2；旧 v1 配置仅保留用于审计已完成的旧运行。
+    parser.add_argument("--config", type=Path, default=ROOT / "configs/pilot_v2.json")
+    # 输出目录必须不存在，避免覆盖原始请求和响应。
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--backend", choices=["mock", "ollama"], default="mock")
     parser.add_argument("--max-trials", type=int, default=None)
     args = parser.parse_args()
     if args.command == "run":
         output = args.output or ROOT / "data/runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        count = run(load_config(args.config), (ROOT / "prompts/system_v1.txt").read_text(encoding="utf-8"), output, args.backend, args.max_trials)
+        config = load_config(args.config)
+        prompt_path = ROOT / config["system_prompt_file"]
+        count = run(config, prompt_path.read_text(encoding="utf-8"), output, args.backend, args.max_trials)
         print(json.dumps({"run_dir": str(output), "trials": count, "backend": args.backend, "artifacts": ["summary.json", "derived_decisions.csv", "figures/"]}))
     else:
         if args.output is None:
