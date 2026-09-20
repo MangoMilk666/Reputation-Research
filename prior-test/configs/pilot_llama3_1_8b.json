@@ -2,7 +2,7 @@
   "protocol_version": "pilot_v2",
   "system_prompt_file": "prompts/system_v2.txt",
   "information_block_order": "private_then_source",
-  "model": "qwen3:8b",
+  "model": "llama3.1:8b",
   "base_url": "http://localhost:11434/v1",
   "history_families": 24,
   "private_reliabilities": [0.65, 0.85],
