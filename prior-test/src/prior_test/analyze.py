@@ -31,7 +31,7 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     """按 v2 规则计算 conflict 主效应、分层比例和 family cluster 区间。"""
     decisions = load_jsonl(run_dir / "decisions.jsonl")
     protocol = _load_manifest(run_dir)["protocol_version"]
-    if protocol in {"refactor_phase0", "refactor_phaseB_neutral_portfolio"}:
+    if protocol in {"refactor_phase0", "refactor_phaseB_neutral_portfolio", "refactor_phaseB_unrealized_pnl"}:
         return summarize_private_signal_protocol(decisions, protocol)
     valid = [row for row in decisions if row["valid"]]
     non_b0 = [row for row in valid if row["treatment_id"] != "B0"]
@@ -73,9 +73,15 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
 def summarize_private_signal_protocol(decisions: list[dict], protocol: str) -> dict:
     """输出阶段 0/B 所需的私人信号一致率、样本量和行动饱和诊断。"""
     valid = [row for row in decisions if row["valid"]]
+    legacy_variant = {
+        "refactor_phase0": "no_portfolio",
+        "refactor_phaseB_neutral_portfolio": "neutral_portfolio",
+    }.get(protocol, "unknown_context_variant")
     cells: dict[tuple[float, str], list[dict]] = defaultdict(list)
+    cells_by_variant: dict[str, dict[tuple[float, str], list[dict]]] = defaultdict(lambda: defaultdict(list))
     for row in valid:
         cells[(row["private_reliability"], row["private_direction"])].append(row)
+        cells_by_variant[row.get("context_variant", legacy_variant)][(row["private_reliability"], row["private_direction"])].append(row)
     cell_summary = {
         f"q{reliability:g}_{direction}": {
             "sample_size": len(rows),
@@ -86,6 +92,17 @@ def summarize_private_signal_protocol(decisions: list[dict], protocol: str) -> d
     }
     action_counts = {action: sum(row["action"] == action for row in valid) for action in ("BUY", "SELL")}
     public_condition_count = len({row["prompt_hash"] for row in decisions})
+    variant_summary = {
+        variant: {
+            f"q{reliability:g}_{direction}": {
+                "sample_size": len(rows),
+                "private_signal_consistent_rate": _private_signal_rate(rows),
+                "buy_rate": sum(row["action"] == "BUY" for row in rows) / len(rows) if rows else None,
+            }
+            for (reliability, direction), rows in sorted(variant_cells.items())
+        }
+        for variant, variant_cells in sorted(cells_by_variant.items())
+    }
     return {
         "analysis_kind": "refactor_private_signal_protocol",
         "protocol_version": protocol,
@@ -94,6 +111,7 @@ def summarize_private_signal_protocol(decisions: list[dict], protocol: str) -> d
         "valid_rate": len(valid) / len(decisions) if decisions else 0,
         "public_prompt_condition_count": public_condition_count,
         "private_signal_cells": cell_summary,
+        "private_signal_cells_by_context_variant": variant_summary,
         "action_counts": action_counts,
         "action_rates": {action: count / len(valid) if valid else None for action, count in action_counts.items()},
         "phase_gate_note": (

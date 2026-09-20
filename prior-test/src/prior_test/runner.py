@@ -92,6 +92,7 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
         trial_record = {
             "trial_id": trial.trial_id,
             "family_id": scenario.family_id,
+            "context_variant": scenario.context_variant,
             "reference_price_state": scenario.portfolio.reference_price_state if scenario.portfolio else None,
             "private_direction": scenario.private_direction,
             "source_action": scenario.source_action,

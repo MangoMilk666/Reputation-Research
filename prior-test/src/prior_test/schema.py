@@ -68,6 +68,7 @@ class Scenario:
     portfolio: PortfolioState | None
     own_history: list[OwnTradeRecord]
     histories: dict[str, list[HistoryRecord]]
+    context_variant: str = "legacy_v2"
 
     @property
     def signal_relation(self) -> str | None:

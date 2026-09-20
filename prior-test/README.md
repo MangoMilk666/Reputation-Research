@@ -66,6 +66,27 @@ ollama pull qwen3:8b
 
 使用 Llama 时仅替换配置文件为 `configs/refactor_phaseB_neutral_portfolio_llama.json`。若任一 `q × private direction` 格子的私人信号一致率低于 80%，或重新出现 BUY/SELL 饱和，则停止增加后续 context block，并先定位该 portfolio block 的影响。
 
+## Refactor Phase B：未实现盈亏消融
+
+在中性 portfolio 通过后，`refactor_phaseB_unrealized_pnl_{qwen,llama}.json` 单独操纵平均成本价和未实现盈亏。三个研究者侧状态为：平均成本价 90、100、110，对应未实现盈亏 +100、0、-100；现金 1000、库存 10、当前价格 100 均固定。模型不会看到状态标签，只会看到数值。
+
+每个模型的正式审计为 240 条（3 个盈亏状态 × 2 个私人方向 × 2 个 q × 20 个不同 seed）。smoke test 的 `--max-trials` 必须是 12 的倍数，12 条恰好覆盖三个状态、两个方向和两个 q 各一次。`summary.json` 和 `private_signal_consistency.png` 会按三个盈亏状态分层；不得只依据总体一致率通过阶段门槛。
+
+```bash
+.venv/bin/prior-test run \
+  --backend mock \
+  --config configs/refactor_phaseB_unrealized_pnl_qwen.json \
+  --max-trials 12 \
+  --output data/runs/refactor/phaseB-unrealized-pnl/mock-smoke
+
+.venv/bin/prior-test run \
+  --backend ollama \
+  --config configs/refactor_phaseB_unrealized_pnl_qwen.json \
+  --output data/runs/refactor/phaseB-unrealized-pnl/qwen3-8b-audit
+```
+
+使用 Llama 时仅替换配置文件为 `configs/refactor_phaseB_unrealized_pnl_llama.json`。若任一“盈亏状态 × q × private direction”格子的私人信号一致率低于 80%，或某一状态重新出现 action saturation，则停止加入后续 context block，先定位 cost basis / unrealized gain-loss 的具体影响。
+
 ## CLI 用法
 
 ```text

@@ -2,7 +2,8 @@ import random
 import json
 
 from prior_test.client import OllamaClient
-from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_neutral_portfolio, make_trials, select_balanced_smoke_trials, validate_history, validate_receiver_state
+from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_neutral_portfolio, make_trials, make_unrealized_pnl_portfolios, select_balanced_smoke_trials, validate_history, validate_receiver_state
+from prior_test.plot import _truncate_axis_label
 from prior_test.render import render_context, render_user_context
 from prior_test.runner import run
 
@@ -36,6 +37,14 @@ def phase_b_neutral_portfolio_config(replicates: int = 2):
     cfg = phase0_config(replicates)
     cfg["protocol_version"] = "refactor_phaseB_neutral_portfolio"
     cfg["context_blocks"] = ["core_task", "neutral_portfolio", "private_signal"]
+    return cfg
+
+
+def phase_b_unrealized_pnl_config(replicates: int = 2):
+    """提供阶段 B 的盈亏单块消融配置，三个状态除成本价与盈亏外完全相同。"""
+    cfg = phase0_config(replicates)
+    cfg["protocol_version"] = "refactor_phaseB_unrealized_pnl"
+    cfg["context_blocks"] = ["core_task", "portfolio_with_unrealized_pnl", "private_signal"]
     return cfg
 
 
@@ -165,6 +174,45 @@ def test_phase_b_mock_run_uses_private_signal_analysis_and_records_neutral_block
     assert (output / "figures/private_signal_consistency.png").exists()
 
 
+def test_phase_b_unrealized_pnl_has_three_isolated_portfolio_variants():
+    """浮盈、零盈亏、浮亏只能改变成本价和由此产生的未实现盈亏。"""
+    portfolios = make_unrealized_pnl_portfolios()
+    assert {name: portfolio.unrealized_gain_loss for name, portfolio in portfolios.items()} == {
+        "unrealized_gain": 100.0,
+        "unrealized_neutral": 0.0,
+        "unrealized_loss": -100.0,
+    }
+    assert {portfolio.cash for portfolio in portfolios.values()} == {1000.0}
+    assert {portfolio.inventory for portfolio in portfolios.values()} == {10}
+    assert {portfolio.current_price for portfolio in portfolios.values()} == {100.0}
+    cfg = phase_b_unrealized_pnl_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    contexts = {render_context(trial, cfg) for trial in trials}
+    assert len(trials) == 24
+    assert len(contexts) == 12
+    assert {trial.scenario.context_variant for trial in trials} == set(portfolios)
+    assert all("all_time_high" not in context and "own_trading_history:" not in context for context in contexts)
+    assert all("source:" not in context and "reference_price_state" not in context for context in contexts)
+
+
+def test_phase_b_unrealized_pnl_smoke_block_and_summary_are_variant_stratified(tmp_path):
+    """盈亏消融的 smoke block 必须完整覆盖三个状态，汇总不得将其混为一个总体格子。"""
+    cfg = phase_b_unrealized_pnl_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    selected = select_balanced_smoke_trials(trials, 12, cfg)
+    assert len(selected) == 12
+    assert {trial.scenario.context_variant for trial in selected} == {
+        "unrealized_gain", "unrealized_neutral", "unrealized_loss"
+    }
+    output = tmp_path / "phaseB-pnl"
+    run(cfg, "Return JSON only.", output, "mock", None)
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert set(summary["private_signal_cells_by_context_variant"]) == {
+        "unrealized_gain", "unrealized_neutral", "unrealized_loss"
+    }
+    assert all(len(cells) == 4 for cells in summary["private_signal_cells_by_context_variant"].values())
+
+
 def test_phase0_mock_run_records_seed_and_writes_phase_specific_artifacts(tmp_path):
     """阶段 0 运行必须记录每次请求 seed，并产生私有信号审计图表而非 v2 图表。"""
     cfg = phase0_config()
@@ -185,3 +233,9 @@ def test_ollama_native_payload_carries_seed():
     client.model, client.temperature, client.max_tokens, client.thinking = "qwen3:8b", .2, 64, False
     payload = client._native_payload("system", "context", 12345)
     assert payload["options"]["seed"] == 12345
+
+
+def test_plot_axis_labels_are_truncated_without_changing_short_labels():
+    """统计图仅截断过长条件名，避免 x 轴拥挤但不改写简短标签。"""
+    assert _truncate_axis_label("q0.65_UP") == "q0.65_UP"
+    assert _truncate_axis_label("unrealized_neutral") == "unrealized_ne…"

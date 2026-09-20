@@ -7,7 +7,11 @@ from .schema import HistoryRecord, OwnTradeRecord, PortfolioState, Scenario, Tri
 
 # 四类价格路径来自 v2 协议，用于平衡 receiver 的个人参照点。
 REFERENCE_STATES = ("G+", "G-", "L-", "L+")
-PRIVATE_SIGNAL_PROTOCOLS = {"refactor_phase0", "refactor_phaseB_neutral_portfolio"}
+PRIVATE_SIGNAL_PROTOCOLS = {
+    "refactor_phase0",
+    "refactor_phaseB_neutral_portfolio",
+    "refactor_phaseB_unrealized_pnl",
+}
 
 
 def make_history(correct_count: int, rng: random.Random) -> list[HistoryRecord]:
@@ -116,24 +120,61 @@ def make_neutral_portfolio() -> PortfolioState:
     return portfolio
 
 
-def generate_private_signal_scenarios(config: dict) -> list[Scenario]:
-    """生成阶段 0/B 共用的私人信号条件；阶段 B 只额外附加中性 portfolio。"""
-    protocol = config["protocol_version"]
-    portfolio = make_neutral_portfolio() if protocol == "refactor_phaseB_neutral_portfolio" else None
-    family_id = "phaseB_neutral_portfolio" if portfolio else "phase0_baseline"
-    return [
-        Scenario(
-            family_id=family_id,
-            private_reliability=reliability,
-            private_direction=private_direction,
-            source_action=None,
-            portfolio=portfolio,
-            own_history=[],
-            histories={},
+def make_unrealized_pnl_portfolios() -> dict[str, PortfolioState]:
+    """构造浮盈、零盈亏、浮亏三种 portfolio；除平均成本价与盈亏外完全相同。"""
+    portfolios = {
+        "unrealized_gain": 90.0,
+        "unrealized_neutral": 100.0,
+        "unrealized_loss": 110.0,
+    }
+    result = {
+        variant: PortfolioState(
+            cash=1000.0,
+            inventory=10,
+            average_cost_basis=cost_basis,
+            current_price=100.0,
+            all_time_high=100.0,
+            all_time_low=100.0,
+            reference_price_state=None,
         )
-        for reliability in config["private_reliabilities"]
-        for private_direction in ("UP", "DOWN")
-    ]
+        for variant, cost_basis in portfolios.items()
+    }
+    expected_pnl = {"unrealized_gain": 100.0, "unrealized_neutral": 0.0, "unrealized_loss": -100.0}
+    for variant, portfolio in result.items():
+        if portfolio.cash < portfolio.current_price or portfolio.inventory < 1:
+            raise ValueError("unrealized-pnl portfolio must allow both one-unit BUY and SELL")
+        if portfolio.unrealized_gain_loss != expected_pnl[variant]:
+            raise ValueError("unrealized-pnl portfolio calculation invariant failed")
+    return result
+
+
+def generate_private_signal_scenarios(config: dict) -> list[Scenario]:
+    """生成阶段 0/B 共用的私人信号条件；每个 context variant 都独立平衡。"""
+    protocol = config["protocol_version"]
+    if protocol == "refactor_phaseB_unrealized_pnl":
+        variants = make_unrealized_pnl_portfolios().items()
+    elif protocol == "refactor_phaseB_neutral_portfolio":
+        variants = [("neutral_portfolio", make_neutral_portfolio())]
+    else:
+        variants = [("no_portfolio", None)]
+    scenarios: list[Scenario] = []
+    for variant, portfolio in variants:
+        family_id = f"phaseB_{variant}" if portfolio else "phase0_baseline"
+        for reliability in config["private_reliabilities"]:
+            for private_direction in ("UP", "DOWN"):
+                scenarios.append(
+                    Scenario(
+                        family_id=family_id,
+                        private_reliability=reliability,
+                        private_direction=private_direction,
+                        source_action=None,
+                        portfolio=portfolio,
+                        own_history=[],
+                        histories={},
+                        context_variant=variant,
+                    )
+                )
+    return scenarios
 
 
 def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
@@ -182,12 +223,12 @@ def select_balanced_smoke_trials(trials: list[Trial], max_trials: int, config: d
 
 
 def select_private_signal_smoke_trials(trials: list[Trial], max_trials: int, config: dict) -> list[Trial]:
-    """阶段 0/B 每个重复 block 包含两种方向与两种 q，共四个公开条件。"""
-    block_size = len(config["private_reliabilities"]) * 2
+    """按完整 context variant×方向×q block 选择阶段 0/B 的 smoke trial。"""
+    block_size = len({(trial.scenario.context_variant, trial.scenario.private_reliability, trial.scenario.private_direction) for trial in trials})
     if max_trials < block_size or max_trials % block_size:
         raise ValueError(
-            f"--max-trials must be a multiple of {block_size}; each phase 0 block "
-            "contains both private directions and all q values."
+            f"--max-trials must be a multiple of {block_size}; each private-signal block "
+            "contains every context variant, both private directions, and all q values."
         )
     blocks: dict[int, list[Trial]] = {}
     for trial in trials:

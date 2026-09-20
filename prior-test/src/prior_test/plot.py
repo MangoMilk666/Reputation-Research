@@ -4,6 +4,11 @@ from collections import defaultdict
 from pathlib import Path
 
 
+def _truncate_axis_label(value: str, max_length: int = 14) -> str:
+    """截断 PNG 中过长的分类标签；完整名称仍保留在机器可读的分析产物中。"""
+    return value if len(value) <= max_length else f"{value[:max_length - 1]}…"
+
+
 def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
     """从派生决策输出 v2 主效应、family 配对效应和关系诊断图。"""
     import matplotlib
@@ -61,16 +66,20 @@ def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
 
 
 def write_phase0_figures(figures: Path, summary: dict, plt) -> None:
-    """绘制阶段 0 的私人信号一致率图，不生成不适用的声誉效应图。"""
-    cells = summary["private_signal_cells"]
-    labels = list(cells)
-    rates = [cells[label]["private_signal_consistent_rate"] or 0 for label in labels]
-    fig, axis = plt.subplots(figsize=(7, 4))
+    """绘制各 context variant 的私人信号一致率，不生成不适用的声誉效应图。"""
+    by_variant = summary["private_signal_cells_by_context_variant"]
+    labels = [
+        f"{_truncate_axis_label(variant)}\n{_truncate_axis_label(cell)}"
+        for variant, cells in by_variant.items()
+        for cell in cells
+    ]
+    rates = [cell["private_signal_consistent_rate"] or 0 for cells in by_variant.values() for cell in cells.values()]
+    fig, axis = plt.subplots(figsize=(max(7, len(labels) * .8), 4))
     axis.bar(labels, rates, color=["#4daf4a" if "UP" in label else "#377eb8" for label in labels])
     axis.axhline(.8, color="#d95f02", linestyle="--", linewidth=1, label="Phase A gate: 0.80")
     axis.set_ylim(0, 1)
     axis.set_ylabel("Private-signal-consistent action rate")
-    axis.set_title("Phase 0: private-signal task audit")
+    axis.set_title("Private-signal consistency by context variant")
     axis.legend()
     fig.tight_layout()
     fig.savefig(figures / "private_signal_consistency.png", dpi=180)

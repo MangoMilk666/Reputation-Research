@@ -92,8 +92,8 @@ def render_phase0_user_context(trial: Trial) -> str:
     return "\n".join([*_render_core_task(), *_render_private_signal(trial)])
 
 
-def render_phase_b_neutral_portfolio_context(trial: Trial) -> str:
-    """只在阶段 B 加入中性 portfolio；不渲染成本以外的价格路径或个人历史。"""
+def render_phase_b_portfolio_context(trial: Trial) -> str:
+    """渲染阶段 B 的 portfolio 块；不渲染价格路径、个人历史或研究者状态标签。"""
     portfolio = trial.scenario.portfolio
     if portfolio is None:
         raise ValueError("phase B neutral-portfolio trial requires a portfolio")
@@ -116,7 +116,9 @@ def render_context(trial: Trial, config: dict) -> str:
     if config["protocol_version"] == "refactor_phase0":
         return render_phase0_user_context(trial)
     if config["protocol_version"] == "refactor_phaseB_neutral_portfolio":
-        return render_phase_b_neutral_portfolio_context(trial)
+        return render_phase_b_portfolio_context(trial)
+    if config["protocol_version"] == "refactor_phaseB_unrealized_pnl":
+        return render_phase_b_portfolio_context(trial)
     return render_user_context(trial, config.get("information_block_order", "private_then_source"))
 
 
