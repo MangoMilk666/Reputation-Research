@@ -87,6 +87,27 @@ ollama pull qwen3:8b
 
 使用 Llama 时仅替换配置文件为 `configs/refactor_phaseB_unrealized_pnl_llama.json`。若任一“盈亏状态 × q × private direction”格子的私人信号一致率低于 80%，或某一状态重新出现 action saturation，则停止加入后续 context block，先定位 cost basis / unrealized gain-loss 的具体影响。
 
+## Refactor Phase B：历史价格范围消融
+
+`refactor_phaseB_all_time_range_{qwen,llama}.json` 保持现金 1000、库存 10、平均成本价 100 与未实现盈亏 0，只额外显示历史价格范围。三个研究者侧状态分别为：当前价格 100 处于历史高点（high=100, low=80）、区间中部（high=120, low=80）、历史低点（high=120, low=100）。模型不会看到状态标签。
+
+每个模型的正式审计为 240 条。smoke test 的 `--max-trials` 必须是 12 的倍数，覆盖三个价格范围、两个私人方向和两个 q。分析按价格范围分层；若任一“价格范围 × q × private direction”格子低于 80% 一致率或重新出现 action saturation，停止阶段 B 并先定位历史价格范围的作用。
+
+```bash
+.venv/bin/prior-test run \
+  --backend mock \
+  --config configs/refactor_phaseB_all_time_range_qwen.json \
+  --max-trials 12 \
+  --output data/runs/refactor/phaseB-all-time-range/mock-smoke
+
+.venv/bin/prior-test run \
+  --backend ollama \
+  --config configs/refactor_phaseB_all_time_range_qwen.json \
+  --output data/runs/refactor/phaseB-all-time-range/qwen3-8b-audit
+```
+
+使用 Llama 时仅替换配置文件为 `configs/refactor_phaseB_all_time_range_llama.json`。
+
 ## CLI 用法
 
 ```text

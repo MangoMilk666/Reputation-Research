@@ -92,23 +92,27 @@ def render_phase0_user_context(trial: Trial) -> str:
     return "\n".join([*_render_core_task(), *_render_private_signal(trial)])
 
 
-def render_phase_b_portfolio_context(trial: Trial) -> str:
-    """渲染阶段 B 的 portfolio 块；不渲染价格路径、个人历史或研究者状态标签。"""
+def render_phase_b_portfolio_context(trial: Trial, include_all_time_range: bool = False) -> str:
+    """渲染阶段 B 的 portfolio 块；仅在指定协议中加入历史价格范围。"""
     portfolio = trial.scenario.portfolio
     if portfolio is None:
         raise ValueError("phase B neutral-portfolio trial requires a portfolio")
-    return "\n".join(
-        [
-            *_render_core_task(),
-            "portfolio:",
-            f"  cash: {portfolio.cash:g}",
-            f"  inventory: {portfolio.inventory}",
-            f"  average_cost_basis: {portfolio.average_cost_basis:g}",
-            f"  current_position_market_value: {portfolio.current_position_market_value:g}",
-            f"  unrealized_gain_loss: {portfolio.unrealized_gain_loss:g}",
-            *_render_private_signal(trial),
-        ]
-    )
+    range_block = [
+        "historical_price_range:",
+        f"  all_time_high: {portfolio.all_time_high:g}",
+        f"  all_time_low: {portfolio.all_time_low:g}",
+    ] if include_all_time_range else []
+    return "\n".join([
+        *_render_core_task(),
+        "portfolio:",
+        f"  cash: {portfolio.cash:g}",
+        f"  inventory: {portfolio.inventory}",
+        f"  average_cost_basis: {portfolio.average_cost_basis:g}",
+        f"  current_position_market_value: {portfolio.current_position_market_value:g}",
+        f"  unrealized_gain_loss: {portfolio.unrealized_gain_loss:g}",
+        *range_block,
+        *_render_private_signal(trial),
+    ])
 
 
 def render_context(trial: Trial, config: dict) -> str:
@@ -119,6 +123,8 @@ def render_context(trial: Trial, config: dict) -> str:
         return render_phase_b_portfolio_context(trial)
     if config["protocol_version"] == "refactor_phaseB_unrealized_pnl":
         return render_phase_b_portfolio_context(trial)
+    if config["protocol_version"] == "refactor_phaseB_all_time_range":
+        return render_phase_b_portfolio_context(trial, include_all_time_range=True)
     return render_user_context(trial, config.get("information_block_order", "private_then_source"))
 
 

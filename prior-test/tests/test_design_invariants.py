@@ -2,7 +2,7 @@ import random
 import json
 
 from prior_test.client import OllamaClient
-from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_neutral_portfolio, make_trials, make_unrealized_pnl_portfolios, select_balanced_smoke_trials, validate_history, validate_receiver_state
+from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_all_time_range_portfolios, make_history, make_neutral_portfolio, make_trials, make_unrealized_pnl_portfolios, select_balanced_smoke_trials, validate_history, validate_receiver_state
 from prior_test.plot import _truncate_axis_label
 from prior_test.render import render_context, render_user_context
 from prior_test.runner import run
@@ -45,6 +45,14 @@ def phase_b_unrealized_pnl_config(replicates: int = 2):
     cfg = phase0_config(replicates)
     cfg["protocol_version"] = "refactor_phaseB_unrealized_pnl"
     cfg["context_blocks"] = ["core_task", "portfolio_with_unrealized_pnl", "private_signal"]
+    return cfg
+
+
+def phase_b_all_time_range_config(replicates: int = 2):
+    """提供阶段 B 的历史价格范围单块消融配置，持仓成本与盈亏保持中性。"""
+    cfg = phase0_config(replicates)
+    cfg["protocol_version"] = "refactor_phaseB_all_time_range"
+    cfg["context_blocks"] = ["core_task", "neutral_portfolio", "historical_price_range", "private_signal"]
     return cfg
 
 
@@ -211,6 +219,45 @@ def test_phase_b_unrealized_pnl_smoke_block_and_summary_are_variant_stratified(t
         "unrealized_gain", "unrealized_neutral", "unrealized_loss"
     }
     assert all(len(cells) == 4 for cells in summary["private_signal_cells_by_context_variant"].values())
+
+
+def test_phase_b_all_time_range_only_changes_historical_range_fields():
+    """历史价格范围消融必须固定现金、库存、成本价和未实现盈亏，并隐藏研究者状态名。"""
+    portfolios = make_all_time_range_portfolios()
+    assert {name: (portfolio.all_time_high, portfolio.all_time_low) for name, portfolio in portfolios.items()} == {
+        "at_all_time_high": (100.0, 80.0),
+        "mid_price_range": (120.0, 80.0),
+        "at_all_time_low": (120.0, 100.0),
+    }
+    assert {portfolio.average_cost_basis for portfolio in portfolios.values()} == {100.0}
+    assert {portfolio.unrealized_gain_loss for portfolio in portfolios.values()} == {0.0}
+    cfg = phase_b_all_time_range_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    contexts = {render_context(trial, cfg) for trial in trials}
+    assert len(trials) == 24
+    assert len(contexts) == 12
+    assert {trial.scenario.context_variant for trial in trials} == set(portfolios)
+    assert all("historical_price_range:" in context for context in contexts)
+    assert all("all_time_high:" in context and "all_time_low:" in context for context in contexts)
+    assert all("source:" not in context and "own_trading_history:" not in context for context in contexts)
+    assert all("reference_price_state" not in context for context in contexts)
+
+
+def test_phase_b_all_time_range_smoke_block_and_summary_are_variant_stratified(tmp_path):
+    """历史价格范围的 smoke block 和汇总必须完整保留三个位置状态。"""
+    cfg = phase_b_all_time_range_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    selected = select_balanced_smoke_trials(trials, 12, cfg)
+    assert len(selected) == 12
+    assert {trial.scenario.context_variant for trial in selected} == {
+        "at_all_time_high", "mid_price_range", "at_all_time_low"
+    }
+    output = tmp_path / "phaseB-range"
+    run(cfg, "Return JSON only.", output, "mock", None)
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    assert set(summary["private_signal_cells_by_context_variant"]) == {
+        "at_all_time_high", "mid_price_range", "at_all_time_low"
+    }
 
 
 def test_phase0_mock_run_records_seed_and_writes_phase_specific_artifacts(tmp_path):

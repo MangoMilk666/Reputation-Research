@@ -31,7 +31,7 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     """按 v2 规则计算 conflict 主效应、分层比例和 family cluster 区间。"""
     decisions = load_jsonl(run_dir / "decisions.jsonl")
     protocol = _load_manifest(run_dir)["protocol_version"]
-    if protocol in {"refactor_phase0", "refactor_phaseB_neutral_portfolio", "refactor_phaseB_unrealized_pnl"}:
+    if protocol in {"refactor_phase0", "refactor_phaseB_neutral_portfolio", "refactor_phaseB_unrealized_pnl", "refactor_phaseB_all_time_range"}:
         return summarize_private_signal_protocol(decisions, protocol)
     valid = [row for row in decisions if row["valid"]]
     non_b0 = [row for row in valid if row["treatment_id"] != "B0"]

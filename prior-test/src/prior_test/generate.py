@@ -11,6 +11,7 @@ PRIVATE_SIGNAL_PROTOCOLS = {
     "refactor_phase0",
     "refactor_phaseB_neutral_portfolio",
     "refactor_phaseB_unrealized_pnl",
+    "refactor_phaseB_all_time_range",
 }
 
 
@@ -148,11 +149,42 @@ def make_unrealized_pnl_portfolios() -> dict[str, PortfolioState]:
     return result
 
 
+def make_all_time_range_portfolios() -> dict[str, PortfolioState]:
+    """构造三种历史价格范围；成本价和未实现盈亏恒为中性，仅改变当前价在范围中的位置。"""
+    ranges = {
+        "at_all_time_high": (100.0, 80.0),
+        "mid_price_range": (120.0, 80.0),
+        "at_all_time_low": (120.0, 100.0),
+    }
+    result = {
+        variant: PortfolioState(
+            cash=1000.0,
+            inventory=10,
+            average_cost_basis=100.0,
+            current_price=100.0,
+            all_time_high=all_time_high,
+            all_time_low=all_time_low,
+            reference_price_state=None,
+        )
+        for variant, (all_time_high, all_time_low) in ranges.items()
+    }
+    for portfolio in result.values():
+        if portfolio.cash < portfolio.current_price or portfolio.inventory < 1:
+            raise ValueError("all-time-range portfolio must allow both one-unit BUY and SELL")
+        if portfolio.unrealized_gain_loss != 0:
+            raise ValueError("all-time-range portfolio must keep unrealized gain/loss neutral")
+        if portfolio.all_time_low > portfolio.current_price or portfolio.all_time_high < portfolio.current_price:
+            raise ValueError("current price must remain inside the displayed all-time range")
+    return result
+
+
 def generate_private_signal_scenarios(config: dict) -> list[Scenario]:
     """生成阶段 0/B 共用的私人信号条件；每个 context variant 都独立平衡。"""
     protocol = config["protocol_version"]
     if protocol == "refactor_phaseB_unrealized_pnl":
         variants = make_unrealized_pnl_portfolios().items()
+    elif protocol == "refactor_phaseB_all_time_range":
+        variants = make_all_time_range_portfolios().items()
     elif protocol == "refactor_phaseB_neutral_portfolio":
         variants = [("neutral_portfolio", make_neutral_portfolio())]
     else:
