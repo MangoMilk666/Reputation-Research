@@ -185,3 +185,10 @@
 - 每个阶段结束时，将配置、运行命令、通过/未通过结论和下一步决定写入该阶段输出目录的简短运行说明。
 - `v1` 与 `v2` 结果仅作为历史诊断证据保存，不删除，不能与 refactor 阶段的数据合并估计。
 - 若同一模型在阶段 A 的最小任务中持续失败，应停止为该模型增加 prompt 修补，在返回的文本中通知用户，转向其他候选模型或重新界定可研究的行为结果。
+- 每完成一次编码更新，需要为用户返回推荐的git commit msg,格式如下:
+
+```txt
+type(scope): commit
+e.g. refactor(phaseB): add neutral portfolio condition for test
+```
+

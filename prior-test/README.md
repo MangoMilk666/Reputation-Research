@@ -45,6 +45,27 @@ ollama pull qwen3:8b
 
 阶段 0 的 `summary.json` 报告每个 `q × private direction` 格子的私人信号一致率、BUY/SELL 计数、有效率和公开 prompt condition 数。唯一图表为 `figures/private_signal_consistency.png`；它不生成不适用的 source-following 图。
 
+## Refactor Phase B：中性 portfolio 消融
+
+在 Phase 0 的最小任务已通过后，`refactor_phaseB_neutral_portfolio_{qwen,llama}.json` 是阶段 B 的第一个单块消融协议。它保留完全相同的终值、先验、收益表、私人信号、system prompt 与输出格式，只增加中性 portfolio：现金 1000、库存 10、平均成本价 100、当前持仓市值 1000、未实现盈亏 0。
+
+它不包含 source、source history、own trading history、all-time high/low 或 `G+ / G- / L+ / L-` 标签。正式运行仍为 80 条；smoke test 的 `--max-trials` 必须是 4 的倍数。
+
+```bash
+.venv/bin/prior-test run \
+  --backend mock \
+  --config configs/refactor_phaseB_neutral_portfolio_qwen.json \
+  --max-trials 4 \
+  --output data/runs/refactor/phaseB-neutral-portfolio/mock-smoke
+
+.venv/bin/prior-test run \
+  --backend ollama \
+  --config configs/refactor_phaseB_neutral_portfolio_qwen.json \
+  --output data/runs/refactor/phaseB-neutral-portfolio/qwen3-8b-audit
+```
+
+使用 Llama 时仅替换配置文件为 `configs/refactor_phaseB_neutral_portfolio_llama.json`。若任一 `q × private direction` 格子的私人信号一致率低于 80%，或重新出现 BUY/SELL 饱和，则停止增加后续 context block，并先定位该 portfolio block 的影响。
+
 ## CLI 用法
 
 ```text

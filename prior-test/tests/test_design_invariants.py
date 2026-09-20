@@ -1,7 +1,8 @@
 import random
+import json
 
 from prior_test.client import OllamaClient
-from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_trials, select_balanced_smoke_trials, validate_history, validate_receiver_state
+from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_neutral_portfolio, make_trials, select_balanced_smoke_trials, validate_history, validate_receiver_state
 from prior_test.render import render_context, render_user_context
 from prior_test.runner import run
 
@@ -28,6 +29,14 @@ def phase0_config(replicates: int = 2):
         "thinking": False,
         "context_blocks": ["core_task", "private_signal"],
     }
+
+
+def phase_b_neutral_portfolio_config(replicates: int = 2):
+    """提供阶段 B 第一个消融块的配置，并保持阶段 0 的核心任务参数不变。"""
+    cfg = phase0_config(replicates)
+    cfg["protocol_version"] = "refactor_phaseB_neutral_portfolio"
+    cfg["context_blocks"] = ["core_task", "neutral_portfolio", "private_signal"]
+    return cfg
 
 
 def test_history_constraints():
@@ -124,6 +133,36 @@ def test_phase0_smoke_selection_keeps_private_direction_and_q_balanced():
     assert {(trial.scenario.private_direction, trial.scenario.private_reliability) for trial in selected} == {
         ("UP", .65), ("UP", .85), ("DOWN", .65), ("DOWN", .85)
     }
+
+
+def test_phase_b_neutral_portfolio_is_feasible_and_has_no_price_path_label():
+    """阶段 B 的首个 block 只能加入零盈亏 portfolio，不得泄漏价格路径或社会信息。"""
+    portfolio = make_neutral_portfolio()
+    assert portfolio.cash >= portfolio.current_price
+    assert portfolio.inventory >= 1
+    assert portfolio.average_cost_basis == portfolio.current_price
+    assert portfolio.unrealized_gain_loss == 0
+    assert portfolio.reference_price_state is None
+    cfg = phase_b_neutral_portfolio_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    contexts = {render_context(trial, cfg) for trial in trials}
+    assert len(contexts) == 4
+    assert all("portfolio:" in context and "unrealized_gain_loss: 0" in context for context in contexts)
+    assert all("source:" not in context and "own_trading_history:" not in context for context in contexts)
+    assert all("all_time_high" not in context and "reference_price_state" not in context for context in contexts)
+
+
+def test_phase_b_mock_run_uses_private_signal_analysis_and_records_neutral_block(tmp_path):
+    """阶段 B 的汇总与图表必须沿用私人信号口径，并记录新增的唯一 context block。"""
+    cfg = phase_b_neutral_portfolio_config()
+    output = tmp_path / "phaseB"
+    run(cfg, "Return JSON only.", output, "mock", None)
+    summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+    prompts = (output / "prompts.jsonl").read_text(encoding="utf-8").splitlines()
+    assert summary["analysis_kind"] == "refactor_private_signal_protocol"
+    assert summary["protocol_version"] == "refactor_phaseB_neutral_portfolio"
+    assert all('"neutral_portfolio"' in row for row in prompts)
+    assert (output / "figures/private_signal_consistency.png").exists()
 
 
 def test_phase0_mock_run_records_seed_and_writes_phase_specific_artifacts(tmp_path):

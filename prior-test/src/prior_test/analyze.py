@@ -30,8 +30,9 @@ def _load_manifest(run_dir: Path) -> dict:
 def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     """按 v2 规则计算 conflict 主效应、分层比例和 family cluster 区间。"""
     decisions = load_jsonl(run_dir / "decisions.jsonl")
-    if _load_manifest(run_dir)["protocol_version"] == "refactor_phase0":
-        return summarize_phase0(decisions)
+    protocol = _load_manifest(run_dir)["protocol_version"]
+    if protocol in {"refactor_phase0", "refactor_phaseB_neutral_portfolio"}:
+        return summarize_private_signal_protocol(decisions, protocol)
     valid = [row for row in decisions if row["valid"]]
     non_b0 = [row for row in valid if row["treatment_id"] != "B0"]
     conflict = [row for row in non_b0 if row["signal_relation"] == "conflict"]
@@ -69,8 +70,8 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     }
 
 
-def summarize_phase0(decisions: list[dict]) -> dict:
-    """输出阶段 0 审计所需的私人信号一致率、样本量和行动饱和诊断。"""
+def summarize_private_signal_protocol(decisions: list[dict], protocol: str) -> dict:
+    """输出阶段 0/B 所需的私人信号一致率、样本量和行动饱和诊断。"""
     valid = [row for row in decisions if row["valid"]]
     cells: dict[tuple[float, str], list[dict]] = defaultdict(list)
     for row in valid:
@@ -86,7 +87,8 @@ def summarize_phase0(decisions: list[dict]) -> dict:
     action_counts = {action: sum(row["action"] == action for row in valid) for action in ("BUY", "SELL")}
     public_condition_count = len({row["prompt_hash"] for row in decisions})
     return {
-        "analysis_kind": "refactor_phase0",
+        "analysis_kind": "refactor_private_signal_protocol",
+        "protocol_version": protocol,
         "planned_trials": len(decisions),
         "valid_trials": len(valid),
         "valid_rate": len(valid) / len(decisions) if decisions else 0,
@@ -94,8 +96,8 @@ def summarize_phase0(decisions: list[dict]) -> dict:
         "private_signal_cells": cell_summary,
         "action_counts": action_counts,
         "action_rates": {action: count / len(valid) if valid else None for action, count in action_counts.items()},
-        "phase0_gate_note": (
-            "Phase A may begin only after each q×private-direction cell has at least 20 valid trials, "
+        "phase_gate_note": (
+            "Each q×private-direction cell requires at least 20 valid trials, "
             "a private-signal-consistent rate of at least 0.80, and neither action is saturated."
         ),
     }

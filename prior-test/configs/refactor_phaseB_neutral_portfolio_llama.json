@@ -1,0 +1,16 @@
+{
+  "protocol_version": "refactor_phaseB_neutral_portfolio",
+  "system_prompt_file": "prompts/system_refactor_phase0.txt",
+  "model": "llama3.1:8b",
+  "base_url": "http://localhost:11434/v1",
+  "private_reliabilities": [0.65, 0.85],
+  "treatments": {"B0": null},
+  "replicates": 20,
+  "temperature": 0.2,
+  "max_tokens": 64,
+  "thinking": false,
+  "order_seed": 20260920,
+  "request_seed": 20260922,
+  "max_attempts": 3,
+  "context_blocks": ["core_task", "neutral_portfolio", "private_signal"]
+}

@@ -14,7 +14,7 @@ def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
 
     figures = run_dir / "figures"
     figures.mkdir(exist_ok=True)
-    if summary.get("analysis_kind") == "refactor_phase0":
+    if summary.get("analysis_kind") == "refactor_private_signal_protocol":
         write_phase0_figures(figures, summary, plt)
         return
     treatments = ["B1", "H60", "H80", "H90"]

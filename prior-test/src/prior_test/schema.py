@@ -44,7 +44,7 @@ class PortfolioState:
     current_price: float
     all_time_high: float
     all_time_low: float
-    reference_price_state: str
+    reference_price_state: str | None
 
     @property
     def current_position_market_value(self) -> float:

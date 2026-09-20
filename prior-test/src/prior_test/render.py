@@ -67,25 +67,45 @@ def render_user_context(trial: Trial, information_block_order: str = "private_th
     return "\n".join(lines)
 
 
+def _render_core_task() -> list[str]:
+    """返回阶段 0 及之后所有消融实验不可变的单期收益规则。"""
+    return [
+        "(Information for this decision)",
+        "decision_horizon: single_period",
+        "current_execution_price: 100",
+        "terminal_value_UP: 110",
+        "terminal_value_DOWN: 90",
+        "prior_probability_UP: 0.5",
+        "trade:",
+        "  quantity: 1",
+        "  execution: immediate",
+        "  transaction_fee: 0",
+        "  BUY_and_SELL_are_both_feasible: true",
+        "incremental_payoff_relative_to_no_trade:",
+        "  if_terminal_UP: BUY=+10; SELL=-10",
+        "  if_terminal_DOWN: BUY=-10; SELL=+10",
+    ]
+
+
 def render_phase0_user_context(trial: Trial) -> str:
     """渲染阶段 0 的最小任务，不带任何个人状态或社会信息。"""
-    scenario = trial.scenario
+    return "\n".join([*_render_core_task(), *_render_private_signal(trial)])
+
+
+def render_phase_b_neutral_portfolio_context(trial: Trial) -> str:
+    """只在阶段 B 加入中性 portfolio；不渲染成本以外的价格路径或个人历史。"""
+    portfolio = trial.scenario.portfolio
+    if portfolio is None:
+        raise ValueError("phase B neutral-portfolio trial requires a portfolio")
     return "\n".join(
         [
-            "(Information for this decision)",
-            "decision_horizon: single_period",
-            "current_execution_price: 100",
-            "terminal_value_UP: 110",
-            "terminal_value_DOWN: 90",
-            "prior_probability_UP: 0.5",
-            "trade:",
-            "  quantity: 1",
-            "  execution: immediate",
-            "  transaction_fee: 0",
-            "  BUY_and_SELL_are_both_feasible: true",
-            "incremental_payoff_relative_to_no_trade:",
-            "  if_terminal_UP: BUY=+10; SELL=-10",
-            "  if_terminal_DOWN: BUY=-10; SELL=+10",
+            *_render_core_task(),
+            "portfolio:",
+            f"  cash: {portfolio.cash:g}",
+            f"  inventory: {portfolio.inventory}",
+            f"  average_cost_basis: {portfolio.average_cost_basis:g}",
+            f"  current_position_market_value: {portfolio.current_position_market_value:g}",
+            f"  unrealized_gain_loss: {portfolio.unrealized_gain_loss:g}",
             *_render_private_signal(trial),
         ]
     )
@@ -95,6 +115,8 @@ def render_context(trial: Trial, config: dict) -> str:
     """按冻结 protocol 选择渲染器，避免阶段 0 意外携带 v2 的背景字段。"""
     if config["protocol_version"] == "refactor_phase0":
         return render_phase0_user_context(trial)
+    if config["protocol_version"] == "refactor_phaseB_neutral_portfolio":
+        return render_phase_b_neutral_portfolio_context(trial)
     return render_user_context(trial, config.get("information_block_order", "private_then_source"))
 
 
