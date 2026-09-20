@@ -8,7 +8,7 @@ from pathlib import Path
 from .analyze import write_analysis_artifacts
 from .client import MockClient, OllamaClient, parse_action
 from .generate import generate_scenarios, make_trials, select_balanced_smoke_trials
-from .render import prompt_hash, render_user_context
+from .render import prompt_hash, render_context
 from .schema import to_jsonable
 
 
@@ -86,12 +86,13 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
     )
     for trial in trials:
         progress.start_trial(trial)
-        context = render_user_context(trial, config.get("information_block_order", "private_then_source"))
+        context = render_context(trial, config)
         scenario = trial.scenario
+        trial_seed = config["request_seed"] + trial.order_index + 1
         trial_record = {
             "trial_id": trial.trial_id,
             "family_id": scenario.family_id,
-            "reference_price_state": scenario.portfolio.reference_price_state,
+            "reference_price_state": scenario.portfolio.reference_price_state if scenario.portfolio else None,
             "private_direction": scenario.private_direction,
             "source_action": scenario.source_action,
             "signal_relation": scenario.signal_relation,
@@ -101,17 +102,22 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
             "order_index": trial.order_index,
             "private_action": "BUY" if scenario.private_direction == "UP" else "SELL",
             "prompt_hash": prompt_hash(system_prompt, context),
+            "context_blocks": config.get("context_blocks", ["legacy_v2_context"]),
+            "trial_seed": trial_seed,
         }
         # 公开输入和模型原始输出分开保存，防止派生分析污染原始记录。
         write_jsonl(prompt_path, {**trial_record, "user_context": context})
         final_action, error = None, None
+        final_attempt_id, final_seed = None, None
         for attempt_id in range(1, config["max_attempts"] + 1):
             completion = None
+            attempt_seed = config["request_seed"] + trial.order_index + attempt_id
             try:
-                completion = client.complete(system_prompt=system_prompt, user_context=context, seed=config["request_seed"] + trial.order_index + attempt_id)
+                completion = client.complete(system_prompt=system_prompt, user_context=context, seed=attempt_seed)
                 action = parse_action(completion.content)
-                write_jsonl(raw_path, {**trial_record, "attempt_id": attempt_id, "raw_response": completion.content, "request_id": completion.request_id, "usage": completion.usage, "latency_ms": completion.latency_ms, "error": None})
+                write_jsonl(raw_path, {**trial_record, "attempt_id": attempt_id, "attempt_seed": attempt_seed, "raw_response": completion.content, "request_id": completion.request_id, "usage": completion.usage, "latency_ms": completion.latency_ms, "error": None})
                 final_action = action
+                final_attempt_id, final_seed = attempt_id, attempt_seed
                 break
             except Exception as exc:  # 每一次失败也要保存，才能计算保守失败界限。
                 error = f"{type(exc).__name__}: {exc}"
@@ -119,6 +125,7 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
                 write_jsonl(raw_path, {
                     **trial_record,
                     "attempt_id": attempt_id,
+                    "attempt_seed": attempt_seed,
                     "raw_response": completion.content if completion else None,
                     "request_id": completion.request_id if completion else None,
                     "usage": completion.usage if completion else {},
@@ -126,7 +133,7 @@ def run(config: dict, system_prompt: str, output_dir: Path, backend: str, max_tr
                     "error": error,
                 })
                 time.sleep(min(0.25 * attempt_id, 1.0))
-        write_jsonl(decision_path, {**trial_record, "action": final_action, "valid": final_action is not None, "final_error": error if final_action is None else None})
+        write_jsonl(decision_path, {**trial_record, "action": final_action, "valid": final_action is not None, "final_attempt_id": final_attempt_id, "final_seed": final_seed, "final_error": error if final_action is None else None})
         progress.finish_trial(trial, is_valid=final_action is not None)
     progress.close()
     # 单次 run 同时产出数据、汇总表和图。

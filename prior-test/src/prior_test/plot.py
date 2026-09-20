@@ -6,10 +6,17 @@ from pathlib import Path
 
 def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
     """从派生决策输出 v2 主效应、family 配对效应和关系诊断图。"""
+    import matplotlib
+
+    # CLI 与测试环境不应依赖 macOS 图形会话；固定无界面后端只写出 PNG 文件。
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     figures = run_dir / "figures"
     figures.mkdir(exist_ok=True)
+    if summary.get("analysis_kind") == "refactor_phase0":
+        write_phase0_figures(figures, summary, plt)
+        return
     treatments = ["B1", "H60", "H80", "H90"]
     rates = [summary["conflict_follow_source_rates"].get(name, 0) or 0 for name in treatments]
     fig, axis = plt.subplots(figsize=(6, 4))
@@ -50,4 +57,21 @@ def write_figures(run_dir: Path, decisions: list[dict], summary: dict) -> None:
     axis.legend(title="signal relation")
     fig.tight_layout()
     fig.savefig(figures / "source_following_by_relation.png", dpi=180)
+    plt.close(fig)
+
+
+def write_phase0_figures(figures: Path, summary: dict, plt) -> None:
+    """绘制阶段 0 的私人信号一致率图，不生成不适用的声誉效应图。"""
+    cells = summary["private_signal_cells"]
+    labels = list(cells)
+    rates = [cells[label]["private_signal_consistent_rate"] or 0 for label in labels]
+    fig, axis = plt.subplots(figsize=(7, 4))
+    axis.bar(labels, rates, color=["#4daf4a" if "UP" in label else "#377eb8" for label in labels])
+    axis.axhline(.8, color="#d95f02", linestyle="--", linewidth=1, label="Phase A gate: 0.80")
+    axis.set_ylim(0, 1)
+    axis.set_ylabel("Private-signal-consistent action rate")
+    axis.set_title("Phase 0: private-signal task audit")
+    axis.legend()
+    fig.tight_layout()
+    fig.savefig(figures / "private_signal_consistency.png", dpi=180)
     plt.close(fig)

@@ -47,7 +47,7 @@ class OllamaClient:
     def complete(self, *, system_prompt: str, user_context: str, seed: int, **_: object) -> Completion:
         started = time.perf_counter()
         if self.thinking is not None:
-            return self._complete_native(system_prompt, user_context, started)
+            return self._complete_native(system_prompt, user_context, seed, started)
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_context}],
@@ -57,13 +57,22 @@ class OllamaClient:
         usage = response.usage.model_dump() if response.usage else {}
         return Completion(response.choices[0].message.content or "", getattr(response, "_request_id", None), usage, int((time.perf_counter() - started) * 1000))
 
-    def _complete_native(self, system_prompt: str, user_context: str, started: float) -> Completion:
+    def _complete_native(self, system_prompt: str, user_context: str, seed: int, started: float) -> Completion:
         """使用 Ollama 原生接口，确保 `think` 不会在 OpenAI 兼容层被忽略。"""
+        payload = self._native_payload(system_prompt, user_context, seed)
+        request = Request(self.native_chat_url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
+        with urlopen(request, timeout=120) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        usage = {key: body[key] for key in ("prompt_eval_count", "eval_count", "total_duration", "load_duration") if key in body}
+        return Completion(body["message"].get("content", ""), None, usage, int((time.perf_counter() - started) * 1000))
+
+    def _native_payload(self, system_prompt: str, user_context: str, seed: int) -> dict:
+        """构造原生请求体，并把记录的 seed 传给 Ollama 的采样选项。"""
         # JSON Schema 只约束输出格式，不会向模型泄漏正确答案或 treatment 标签。
-        payload = {
+        return {
             "model": self.model,
             "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_context}],
-            "options": {"temperature": self.temperature, "num_predict": self.max_tokens},
+            "options": {"temperature": self.temperature, "num_predict": self.max_tokens, "seed": seed},
             "think": self.thinking,
             "format": {
                 "type": "object",
@@ -73,11 +82,6 @@ class OllamaClient:
             },
             "stream": False,
         }
-        request = Request(self.native_chat_url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"}, method="POST")
-        with urlopen(request, timeout=120) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        usage = {key: body[key] for key in ("prompt_eval_count", "eval_count", "total_duration", "load_duration") if key in body}
-        return Completion(body["message"].get("content", ""), None, usage, int((time.perf_counter() - started) * 1000))
 
 
 def parse_action(content: str) -> str:

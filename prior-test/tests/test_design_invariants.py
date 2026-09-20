@@ -1,12 +1,33 @@
 import random
 
+from prior_test.client import OllamaClient
 from prior_test.generate import REFERENCE_STATES, generate_scenarios, make_history, make_trials, select_balanced_smoke_trials, validate_history, validate_receiver_state
-from prior_test.render import render_user_context
+from prior_test.render import render_context, render_user_context
+from prior_test.runner import run
 
 
 def config():
     """提供最小 v2 配置，使每个测试只关注一个设计不变量。"""
     return {"order_seed": 1, "request_seed": 2, "history_families": 4, "private_reliabilities": [.65, .85], "treatments": {"B0": None, "B1": None, "H60": 12, "H80": 16, "H90": 18}, "replicates": 2}
+
+
+def phase0_config(replicates: int = 2):
+    """提供阶段 0 的最小配置，用于验证公开条件和审计产物。"""
+    return {
+        "protocol_version": "refactor_phase0",
+        "private_reliabilities": [.65, .85],
+        "treatments": {"B0": None},
+        "replicates": replicates,
+        "order_seed": 1,
+        "request_seed": 2,
+        "max_attempts": 1,
+        "base_url": "http://localhost:11434/v1",
+        "model": "mock-model",
+        "temperature": .2,
+        "max_tokens": 64,
+        "thinking": False,
+        "context_blocks": ["core_task", "private_signal"],
+    }
 
 
 def test_history_constraints():
@@ -80,3 +101,48 @@ def test_smoke_selection_keeps_complete_v2_block():
     assert len({trial.scenario.family_id for trial in selected}) == 1
     assert {trial.treatment_id for trial in selected} == {"B0", "B1", "H60", "H80", "H90"}
     assert {(trial.scenario.private_direction, trial.scenario.source_action) for trial in selected} == {("UP", "BUY"), ("UP", "SELL"), ("DOWN", "BUY"), ("DOWN", "SELL")}
+
+
+def test_phase0_has_only_four_public_conditions_and_no_source_pseudoreplication():
+    """阶段 0 只能按私人方向与 q 生成条件，重复调用不应引入隐藏 source 条件。"""
+    cfg = phase0_config()
+    trials = make_trials(generate_scenarios(cfg), cfg)
+    assert len(trials) == 8
+    assert {trial.treatment_id for trial in trials} == {"B0"}
+    assert {trial.scenario.source_action for trial in trials} == {None}
+    contexts = {render_context(trial, cfg) for trial in trials}
+    assert len(contexts) == 4
+    assert all("source:" not in context and "portfolio:" not in context for context in contexts)
+    assert all("reference_price_state" not in context for context in contexts)
+
+
+def test_phase0_smoke_selection_keeps_private_direction_and_q_balanced():
+    """阶段 0 的最小 smoke block 必须同时覆盖两种私人方向与全部 q。"""
+    cfg = phase0_config()
+    selected = select_balanced_smoke_trials(make_trials(generate_scenarios(cfg), cfg), 4, cfg)
+    assert len(selected) == 4
+    assert {(trial.scenario.private_direction, trial.scenario.private_reliability) for trial in selected} == {
+        ("UP", .65), ("UP", .85), ("DOWN", .65), ("DOWN", .85)
+    }
+
+
+def test_phase0_mock_run_records_seed_and_writes_phase_specific_artifacts(tmp_path):
+    """阶段 0 运行必须记录每次请求 seed，并产生私有信号审计图表而非 v2 图表。"""
+    cfg = phase0_config()
+    output = tmp_path / "phase0"
+    run(cfg, "Return JSON only.", output, "mock", None)
+    decisions = (output / "decisions.jsonl").read_text(encoding="utf-8").splitlines()
+    raw_attempts = (output / "raw_attempts.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(decisions) == len(raw_attempts) == 8
+    assert all('"final_seed"' in row for row in decisions)
+    assert all('"attempt_seed"' in row for row in raw_attempts)
+    assert (output / "figures/private_signal_consistency.png").exists()
+    assert not (output / "figures/source_following_conflict_rates.png").exists()
+
+
+def test_ollama_native_payload_carries_seed():
+    """thinking 模式下也必须把审计 seed 传给 Ollama 原生采样选项。"""
+    client = object.__new__(OllamaClient)
+    client.model, client.temperature, client.max_tokens, client.thinking = "qwen3:8b", .2, 64, False
+    payload = client._native_payload("system", "context", 12345)
+    assert payload["options"]["seed"] == 12345

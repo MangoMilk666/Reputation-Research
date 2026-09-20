@@ -17,9 +17,21 @@ def _rate(rows: list[dict]) -> float | None:
     return sum(row["action"] == row["source_action"] for row in rows) / len(rows) if rows else None
 
 
+def _private_signal_rate(rows: list[dict]) -> float | None:
+    """计算 action 与私人信号隐含方向一致的比例，空分组不伪造零值。"""
+    return sum(row["action"] == row["private_action"] for row in rows) / len(rows) if rows else None
+
+
+def _load_manifest(run_dir: Path) -> dict:
+    """读取运行时冻结的配置，以便按 protocol 选择对应分析口径。"""
+    return json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+
+
 def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     """按 v2 规则计算 conflict 主效应、分层比例和 family cluster 区间。"""
     decisions = load_jsonl(run_dir / "decisions.jsonl")
+    if _load_manifest(run_dir)["protocol_version"] == "refactor_phase0":
+        return summarize_phase0(decisions)
     valid = [row for row in decisions if row["valid"]]
     non_b0 = [row for row in valid if row["treatment_id"] != "B0"]
     conflict = [row for row in non_b0 if row["signal_relation"] == "conflict"]
@@ -57,11 +69,43 @@ def summarize(run_dir: Path, bootstrap_reps: int = 5000) -> dict:
     }
 
 
+def summarize_phase0(decisions: list[dict]) -> dict:
+    """输出阶段 0 审计所需的私人信号一致率、样本量和行动饱和诊断。"""
+    valid = [row for row in decisions if row["valid"]]
+    cells: dict[tuple[float, str], list[dict]] = defaultdict(list)
+    for row in valid:
+        cells[(row["private_reliability"], row["private_direction"])].append(row)
+    cell_summary = {
+        f"q{reliability:g}_{direction}": {
+            "sample_size": len(rows),
+            "private_signal_consistent_rate": _private_signal_rate(rows),
+            "buy_rate": sum(row["action"] == "BUY" for row in rows) / len(rows) if rows else None,
+        }
+        for (reliability, direction), rows in sorted(cells.items())
+    }
+    action_counts = {action: sum(row["action"] == action for row in valid) for action in ("BUY", "SELL")}
+    public_condition_count = len({row["prompt_hash"] for row in decisions})
+    return {
+        "analysis_kind": "refactor_phase0",
+        "planned_trials": len(decisions),
+        "valid_trials": len(valid),
+        "valid_rate": len(valid) / len(decisions) if decisions else 0,
+        "public_prompt_condition_count": public_condition_count,
+        "private_signal_cells": cell_summary,
+        "action_counts": action_counts,
+        "action_rates": {action: count / len(valid) if valid else None for action, count in action_counts.items()},
+        "phase0_gate_note": (
+            "Phase A may begin only after each q×private-direction cell has at least 20 valid trials, "
+            "a private-signal-consistent rate of at least 0.80, and neither action is saturated."
+        ),
+    }
+
+
 def write_analysis_artifacts(run_dir: Path) -> dict:
     """写入派生表、汇总 JSON 和可复现图表，且不改变原始决策文件。"""
     decisions = load_jsonl(run_dir / "decisions.jsonl")
     for row in decisions:
-        has_source = row["treatment_id"] != "B0"
+        has_source = row["source_action"] is not None
         row["follow_source"] = row["valid"] and row["action"] == row["source_action"] if has_source else None
         row["follow_private"] = row["valid"] and row["action"] == row["private_action"]
         row["is_primary_conflict_cell"] = has_source and row["signal_relation"] == "conflict"

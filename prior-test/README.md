@@ -24,6 +24,27 @@ ollama pull qwen3:8b
 
 默认 Ollama 地址为 `http://localhost:11434/v1`。模型名、温度、token 上限、随机种子、样本量和最多重试次数都在配置文件中冻结；不要将 API key 写入配置或日志。
 
+## Refactor Phase 0：测量与样本结构审计
+
+`configs/refactor_phase0.json` 是 refactor 分支的第一个可运行协议。它只包含最小单期收益任务与私人信号：没有 portfolio、历史价格、个人交易史、source action 或 source history。它用于审计公开 prompt 去重、seed 记录、逐 trial 落盘和结构化响应，不用于估计声誉效应。
+
+正式的小规模审计为 80 个 trial（2 个私人方向 × 2 个 q × 20 个不同 seed）。开发 smoke test 的 `--max-trials` 必须是 4 的倍数；4 条刚好覆盖两个方向和两个 q 各一次。
+
+```bash
+.venv/bin/prior-test run \
+  --backend mock \
+  --config configs/refactor_phase0_qwen.json \
+  --max-trials 4 \
+  --output data/runs/refactor/phase0/mock-smoke
+
+.venv/bin/prior-test run \
+  --backend ollama \
+  --config configs/refactor_phase0_qwen.json \
+  --output data/runs/refactor/phase0/qwen3-8b-audit
+```
+
+阶段 0 的 `summary.json` 报告每个 `q × private direction` 格子的私人信号一致率、BUY/SELL 计数、有效率和公开 prompt condition 数。唯一图表为 `figures/private_signal_consistency.png`；它不生成不适用的 source-following 图。
+
 ## CLI 用法
 
 ```text

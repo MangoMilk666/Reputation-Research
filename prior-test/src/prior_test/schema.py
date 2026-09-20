@@ -64,14 +64,16 @@ class Scenario:
     family_id: str
     private_reliability: float
     private_direction: str
-    source_action: str
-    portfolio: PortfolioState
+    source_action: str | None
+    portfolio: PortfolioState | None
     own_history: list[OwnTradeRecord]
     histories: dict[str, list[HistoryRecord]]
 
     @property
-    def signal_relation(self) -> str:
+    def signal_relation(self) -> str | None:
         """标记 source 与 private signal 是一致还是冲突，供分析分层使用。"""
+        if self.source_action is None:
+            return None
         private_action = "BUY" if self.private_direction == "UP" else "SELL"
         return "agreement" if self.source_action == private_action else "conflict"
 

@@ -67,6 +67,37 @@ def render_user_context(trial: Trial, information_block_order: str = "private_th
     return "\n".join(lines)
 
 
+def render_phase0_user_context(trial: Trial) -> str:
+    """渲染阶段 0 的最小任务，不带任何个人状态或社会信息。"""
+    scenario = trial.scenario
+    return "\n".join(
+        [
+            "(Information for this decision)",
+            "decision_horizon: single_period",
+            "current_execution_price: 100",
+            "terminal_value_UP: 110",
+            "terminal_value_DOWN: 90",
+            "prior_probability_UP: 0.5",
+            "trade:",
+            "  quantity: 1",
+            "  execution: immediate",
+            "  transaction_fee: 0",
+            "  BUY_and_SELL_are_both_feasible: true",
+            "incremental_payoff_relative_to_no_trade:",
+            "  if_terminal_UP: BUY=+10; SELL=-10",
+            "  if_terminal_DOWN: BUY=-10; SELL=+10",
+            *_render_private_signal(trial),
+        ]
+    )
+
+
+def render_context(trial: Trial, config: dict) -> str:
+    """按冻结 protocol 选择渲染器，避免阶段 0 意外携带 v2 的背景字段。"""
+    if config["protocol_version"] == "refactor_phase0":
+        return render_phase0_user_context(trial)
+    return render_user_context(trial, config.get("information_block_order", "private_then_source"))
+
+
 def prompt_hash(system_prompt: str, user_context: str) -> str:
     """为最终发送的两段文本生成稳定哈希，以便审计与复算。"""
     return hashlib.sha256(f"{system_prompt}\n{user_context}".encode()).hexdigest()

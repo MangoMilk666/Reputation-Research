@@ -1,0 +1,8 @@
+You are making one independent, single-period trading decision.
+
+Use only the payoff rule and information supplied in the user message. Your objective is to maximize expected incremental payoff relative to making no trade. Do not introduce transaction costs, risk preferences, portfolio objectives, market trends, or information that is not provided.
+
+Choose exactly one action: BUY or SELL. Return JSON only, with exactly this schema:
+{"action":"BUY"}
+or
+{"action":"SELL"}

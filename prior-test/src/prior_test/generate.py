@@ -81,6 +81,8 @@ def validate_receiver_state(portfolio: PortfolioState, own_history: list[OwnTrad
 
 def generate_scenarios(config: dict) -> list[Scenario]:
     """生成 v2 的完整平衡组合：family、价格状态、两类方向与私人可靠度。"""
+    if config.get("protocol_version") == "refactor_phase0":
+        return generate_phase0_scenarios(config)
     rng = random.Random(config["order_seed"])
     scenarios: list[Scenario] = []
     for family_number in range(1, config["history_families"] + 1):
@@ -95,8 +97,27 @@ def generate_scenarios(config: dict) -> list[Scenario]:
     return scenarios
 
 
+def generate_phase0_scenarios(config: dict) -> list[Scenario]:
+    """生成无 source、无个人背景的最小私人信号任务，供阶段 0 审计使用。"""
+    return [
+        Scenario(
+            family_id="phase0_baseline",
+            private_reliability=reliability,
+            private_direction=private_direction,
+            source_action=None,
+            portfolio=None,
+            own_history=[],
+            histories={},
+        )
+        for reliability in config["private_reliabilities"]
+        for private_direction in ("UP", "DOWN")
+    ]
+
+
 def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
     """展开处理与重复调用，并用独立随机种子打乱实际请求顺序。"""
+    if config.get("protocol_version") == "refactor_phase0":
+        return make_phase0_trials(scenarios, config)
     trials: list[Trial] = []
     for scenario in scenarios:
         for treatment_id in config["treatments"]:
@@ -108,14 +129,47 @@ def make_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
     return [Trial(item.trial_id, item.scenario, item.treatment_id, item.replicate_id, index) for index, item in enumerate(trials)]
 
 
+def make_phase0_trials(scenarios: list[Scenario], config: dict) -> list[Trial]:
+    """仅按私人信号与 q 展开 B0，避免在不可见 source 条件上制造伪重复。"""
+    trials: list[Trial] = []
+    for scenario in scenarios:
+        for replicate_id in range(1, config["replicates"] + 1):
+            trial_id = (
+                f"phase0_private{scenario.private_direction}_"
+                f"q{scenario.private_reliability}_B0_r{replicate_id}"
+            )
+            trials.append(Trial(trial_id, scenario, "B0", replicate_id, -1))
+    rng = random.Random(config["request_seed"])
+    rng.shuffle(trials)
+    return [Trial(item.trial_id, item.scenario, item.treatment_id, item.replicate_id, index) for index, item in enumerate(trials)]
+
+
 def select_balanced_smoke_trials(trials: list[Trial], max_trials: int, config: dict) -> list[Trial]:
     """选择完整 family×replicate block，保留 v2 的方向与一致性平衡。"""
+    if config.get("protocol_version") == "refactor_phase0":
+        return select_phase0_smoke_trials(trials, max_trials, config)
     block_size = len(config["private_reliabilities"]) * 2 * 2 * len(config["treatments"])
     if max_trials < block_size or max_trials % block_size:
         raise ValueError(f"--max-trials must be a multiple of {block_size}; each v2 smoke block contains one family, both private/source directions, all q values, and all treatments.")
     blocks: dict[tuple[str, int], list[Trial]] = {}
     for trial in trials:
         blocks.setdefault((trial.scenario.family_id, trial.replicate_id), []).append(trial)
+    ordered_blocks = sorted(blocks.values(), key=lambda block: min(trial.order_index for trial in block))
+    selected = [trial for block in ordered_blocks[: max_trials // block_size] for trial in block]
+    return sorted(selected, key=lambda trial: trial.order_index)
+
+
+def select_phase0_smoke_trials(trials: list[Trial], max_trials: int, config: dict) -> list[Trial]:
+    """阶段 0 每个重复 block 包含两种方向与两种 q，共四个公开条件。"""
+    block_size = len(config["private_reliabilities"]) * 2
+    if max_trials < block_size or max_trials % block_size:
+        raise ValueError(
+            f"--max-trials must be a multiple of {block_size}; each phase 0 block "
+            "contains both private directions and all q values."
+        )
+    blocks: dict[int, list[Trial]] = {}
+    for trial in trials:
+        blocks.setdefault(trial.replicate_id, []).append(trial)
     ordered_blocks = sorted(blocks.values(), key=lambda block: min(trial.order_index for trial in block))
     selected = [trial for block in ordered_blocks[: max_trials // block_size] for trial in block]
     return sorted(selected, key=lambda trial: trial.order_index)
